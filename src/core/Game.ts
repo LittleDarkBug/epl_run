@@ -50,7 +50,8 @@ const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()
 
 export class Game {
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1400);
+  // Plan proche a 30 cm : 3 fois plus de precision de profondeur au loin (plus de z-fighting).
+  private camera = new THREE.PerspectiveCamera(60, 1, 0.3, 900);
   private renderer: Renderer;
   private ui = new UI();
   private audio = new Audio();
@@ -232,7 +233,7 @@ export class Game {
   }
 
   private setupLights() {
-    this.scene.fog = new THREE.FogExp2(PALETTE.fog, 0.0062);
+    this.scene.fog = new THREE.FogExp2(PALETTE.fog, 0.0078);
     this.sky = createSky(true);
     this.scene.add(this.sky);
     this.scene.add(createSkyline());
@@ -245,10 +246,6 @@ export class Game {
     const size = this.renderer.shadowMapSize;
     sun.shadow.mapSize.set(size, size);
     const cam = sun.shadow.camera;
-    cam.left = -34;
-    cam.right = 34;
-    cam.top = 34;
-    cam.bottom = -34;
     cam.near = 1;
     cam.far = 220;
     sun.shadow.bias = -0.0004;
@@ -257,6 +254,21 @@ export class Game {
     sun.target.position.set(0, 0, -20);
     sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 110);
     this.scene.add(sun, sun.target);
+    // Cadrage serre de la carte d'ombres sur la zone utile (route et facades
+    // proches) : texels 2 fois plus fins, bords d'ombre qui ne fourmillent plus.
+    sun.updateMatrixWorld();
+    sun.target.updateMatrixWorld();
+    cam.position.copy(sun.position);
+    cam.lookAt(sun.target.position);
+    cam.updateMatrixWorld();
+    const inv = cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+    const box = new THREE.Box3();
+    for (const x of [-18, 18]) for (const y of [0, 18]) for (const z of [-60, 14]) box.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(inv));
+    cam.left = box.min.x;
+    cam.right = box.max.x;
+    cam.bottom = box.min.y;
+    cam.top = box.max.y;
+    cam.updateProjectionMatrix();
     this.sun = sun;
   }
 

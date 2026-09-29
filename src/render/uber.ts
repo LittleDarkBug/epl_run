@@ -71,22 +71,28 @@ export function createUberMaterial(opts: UberOptions = {}): THREE.MeshStandardMa
         '#include <color_fragment>',
         `#include <color_fragment>
         {
-          vec3 np = vWPos * vec3(1.3, 2.1, 1.3);
-          float n = uNoise(np) * 0.6 + uNoise(np * 3.7) * 0.4;
-          float streak = uNoise(vec3(vWPos.x * 3.0, vWPos.y * 0.35, vWPos.z * 3.0));
-          float g = ${grime} * (1.0 - vPbr.z);
-          diffuseColor.rgb *= 1.0 - g + g * 1.35 * n;
-          diffuseColor.rgb *= 1.0 - g * 0.6 * smoothstep(0.55, 0.9, streak) * step(abs(vWNormal.y), 0.5);
+          // Variation de teinte douce et basse frequence (pas de bruit fin :
+          // non filtre, il grésille a distance). Estompee avec l'eloignement.
+          float dist = length(vWPos - cameraPosition);
+          float fade = 1.0 - smoothstep(18.0, 70.0, dist);
+          float n = uNoise(vWPos * vec3(0.35, 0.5, 0.35));
+          float g = ${grime} * (1.0 - vPbr.z) * (0.35 + 0.65 * fade);
+          diffuseColor.rgb *= 1.0 - g * 0.5 + g * n;
+          // Leger assombrissement des bas de murs (eclaboussures de laterite).
+          float splash = (1.0 - smoothstep(0.2, 1.1, vWPos.y)) * step(abs(vWNormal.y), 0.5);
+          diffuseColor.rgb *= 1.0 - splash * g * 0.8;
           #if ${ao} == 1
             float aoH = smoothstep(0.0, 1.6, vWPos.y);
-            diffuseColor.rgb *= mix(0.55, 1.0, aoH);
+            diffuseColor.rgb *= mix(0.68, 1.0, aoH);
           #endif
         }`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
-        roughnessFactor = vPbr.y;`,
+        // Anti-aliasing speculaire : les surfaces lisses (vitres, metal) se
+        // rugosifient avec la distance pour ne pas scintiller.
+        roughnessFactor = max(vPbr.y, mix(0.12, 0.5, smoothstep(15.0, 110.0, length(vWPos - cameraPosition))));`,
       )
       .replace(
         '#include <metalnessmap_fragment>',

@@ -225,10 +225,11 @@ function housePastel(f: Facade) {
       b.add(UNIT.box, mat(xf - side * 0.6, by, bz, 0, 0, 0, 1.2, 0.16, bl), TRIM, { r: 0.7 });
       const rail = pick(r, ['#1f2933', '#f7f3ea', shutter]);
       b.add(UNIT.box, mat(xf - side * 1.17, by + 0.95, bz, 0, 0, 0, 0.06, 0.06, bl), rail, { r: 0.5, m: 0.3 });
-      const n = Math.floor(bl / 0.22);
+      const n = Math.max(2, Math.floor(bl / 0.5));
       for (let k = 0; k <= n; k++) {
-        b.add(UNIT.box, mat(xf - side * 1.17, by + 0.5, bz - bl / 2 + k * (bl / n), 0, 0, 0, 0.04, 0.9, 0.04), rail, { r: 0.5, m: 0.3 });
+        b.add(UNIT.box, mat(xf - side * 1.17, by + 0.5, bz - bl / 2 + k * (bl / n), 0, 0, 0, 0.06, 0.9, 0.06), rail, { r: 0.5, m: 0.3 });
       }
+      b.add(UNIT.box, mat(xf - side * 1.17, by + 0.35, bz, 0, 0, 0, 0.05, 0.05, bl), rail, { r: 0.5, m: 0.3 });
       if (r() < 0.6) addBush(b, xf - side * 0.8, by + 0.1, bz - bl / 2 + 0.4, 0.6, r);
     }
   }
@@ -260,8 +261,8 @@ function shopHouse(f: Facade) {
       b.add(UNIT.box, mat(xf + side * 0.2, SIDEWALK_Y + 0.4 + (k % 3) * 0.6, zc - sw / 2 + 0.4 + (k * 0.37) % (sw - 0.8), 0, 0, 0, 0.3, 0.45, 0.35), c, { r: 0.6 });
     }
   } else {
-    for (let k = 0; k < 14; k++) {
-      b.add(UNIT.box, mat(xf - side * 0.08, SIDEWALK_Y + 0.2 + k * 0.18, zc, 0, 0, 0, 0.03, 0.03, sw), '#7d848a', { r: 0.4, m: 0.8 });
+    for (let k = 0; k < 6; k++) {
+      b.add(UNIT.box, mat(xf - side * 0.08, SIDEWALK_Y + 0.3 + k * 0.42, zc, 0, 0, 0, 0.04, 0.06, sw), '#7d848a', { r: 0.45, m: 0.6 });
     }
   }
   // Enseigne peinte.
@@ -427,7 +428,8 @@ export function addEplWing(b: GeoBuilder, base: THREE.Matrix4, len: number, r: R
   const fh = 3.6;
   const depth = 11;
   const H = floors * fh;
-  add(UNIT.box, mat(len / 2, H / 2, depth / 2, 0, 0, 0, len, H, depth), EPL_YELLOW, { r: 0.9 });
+  // Mur de fond en retrait de 35 cm : les ouvertures a barreaux ont de la profondeur.
+  add(UNIT.box, mat(len / 2, H / 2, depth / 2 + 0.35, 0, 0, 0, len, H, depth - 0.7), EPL_YELLOW, { r: 0.9 });
   // Toiture en tole.
   add(UNIT.box, mat(len / 2, H + 0.25, depth / 2, 0, 0, 0, len + 0.8, 0.3, depth + 1.6), '#8f969e', { r: 0.45, m: 0.6 });
   add(UNIT.box, mat(len / 2, H + 0.05, -0.1, 0, 0, 0, len + 0.8, 0.35, 0.3), EPL_YELLOW_D, { r: 0.8 });
@@ -442,12 +444,16 @@ export function addEplWing(b: GeoBuilder, base: THREE.Matrix4, len: number, r: R
       const x0 = i * bw;
       // Ouverture a barreaux avec interieur sombre ou bache bleue.
       const inside = r() < 0.35 ? '#2553a8' : '#252c36';
-      add(UNIT.box, mat(x0 + bw / 2, y0 + 2.05, 0.05, 0, 0, 0, bw - 0.4, 2.1, 0.05), inside, { r: 0.7 });
-      const nbar = Math.floor((bw - 0.4) / 0.22);
+      add(UNIT.box, mat(x0 + bw / 2, y0 + 2.05, 0.36, 0, 0, 0, bw - 0.1, 2.1, 0.02), inside, { r: 0.7 });
+      // Allege pleine sous l'ouverture.
+      add(UNIT.box, mat(x0 + bw / 2, y0 + 0.5, 0.15, 0, 0, 0, bw, 1.0, 0.3), EPL_YELLOW, { r: 0.9 });
+      const nbar = Math.max(3, Math.round((bw - 0.4) / 0.42));
       for (let k = 1; k < nbar; k++) {
-        add(UNIT.box, mat(x0 + 0.2 + k * ((bw - 0.4) / nbar), y0 + 2.05, -0.08, 0, 0, 0, 0.03, 2.1, 0.03), '#3b3f45', { r: 0.4, m: 0.7 });
+        add(UNIT.box, mat(x0 + 0.2 + k * ((bw - 0.4) / nbar), y0 + 2.05, 0.02, 0, 0, 0, 0.05, 2.1, 0.05), '#3b3f45', { r: 0.45, m: 0.6 });
       }
-      for (const yy of [y0 + 1.05, y0 + 2.05, y0 + 3.08]) add(UNIT.box, mat(x0 + bw / 2, yy, -0.08, 0, 0, 0, bw - 0.4, 0.04, 0.04), '#3b3f45', { r: 0.4, m: 0.7 });
+      for (const yy of [y0 + 1.05, y0 + 3.08]) add(UNIT.box, mat(x0 + bw / 2, yy, 0.02, 0, 0, 0, bw - 0.3, 0.06, 0.06), '#3b3f45', { r: 0.45, m: 0.6 });
+      // Dessous de la travee (plafond de l'ouverture).
+      add(UNIT.box, mat(x0 + bw / 2, y0 + 3.2, 0.18, 0, 0, 0, bw, 0.2, 0.36), EPL_YELLOW_D, { r: 0.9 });
       // Auvent jaune incline au-dessus de chaque travee.
       add(UNIT.box, mat(x0 + bw / 2, y0 + 3.35, -0.55, -0.42, 0, 0, bw - 0.1, 0.07, 1.25), EPL_YELLOW, { r: 0.75 });
       add(UNIT.box, mat(x0 + bw / 2, y0 + 3.1, -1.12, 0, 0, 0, bw - 0.1, 0.12, 0.05), EPL_YELLOW_D, { r: 0.75 });

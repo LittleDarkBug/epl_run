@@ -93,7 +93,7 @@ export class World {
   private travelled = 0;
 
   constructor(maxAniso: number, img: ZoneImages) {
-    const uber = createUberMaterial({ grime: 0.22, groundAO: true });
+    const uber = createUberMaterial({ grime: 0.14, groundAO: true });
     const uberIn = createUberMaterial({ grime: 0.12, groundAO: false });
     const r = mulberry(1234);
     const make = (kind: Kind, n: number, fn: () => { geo: THREE.BufferGeometry; extras: THREE.Object3D[] }, m = uber) => {
@@ -126,7 +126,7 @@ export class World {
       map: rt.map,
       roughnessMap: rt.roughnessMap,
       normalMap: rt.normalMap,
-      normalScale: new THREE.Vector2(0.9, 0.9),
+      normalScale: new THREE.Vector2(0.45, 0.45),
       roughness: 1,
       metalness: 0,
       envMapIntensity: 0.9,
@@ -145,7 +145,8 @@ export class World {
     const walkMat = applyBend(new THREE.MeshStandardMaterial({
       map: pv.map,
       normalMap: pv.normalMap,
-      roughness: 0.88,
+      normalScale: new THREE.Vector2(0.6, 0.6),
+      roughness: 0.9,
       envMapIntensity: 0.6,
     }));
     this.walkTex = [pv.map, pv.normalMap];
@@ -165,7 +166,7 @@ export class World {
       new THREE.PlaneGeometry(700, roadLen + 200, 1, 40).rotateX(-Math.PI / 2),
       applyBend(new THREE.MeshStandardMaterial({ color: '#9a5a3a', roughness: 1 })),
     );
-    ground.position.set(0, -0.02, this.road.position.z - 100);
+    ground.position.set(0, -0.12, this.road.position.z - 100);
     ground.receiveShadow = true;
     ground.frustumCulled = false;
     this.group.add(ground);

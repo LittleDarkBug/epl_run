@@ -115,7 +115,7 @@ export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages): { ge
   }
   for (let z = z0 - bay / 2; z > z1; z -= bay) {
     // Barreaux metalliques comme sur les batiments de l'EPL.
-    for (let k = 0; k < 11; k++) b.add(UNIT.box, mat(xl, (1.1 + H - 0.8) / 2, z - (bay - 0.5) / 2 + (k + 0.5) * ((bay - 0.5) / 11), 0, 0, 0, 0.03, H - 1.9, 0.03), '#3b3f45', { r: 0.4, m: 0.7 });
+    for (let k = 0; k < 6; k++) b.add(UNIT.box, mat(xl, (1.1 + H - 0.8) / 2, z - (bay - 0.5) / 2 + (k + 0.5) * ((bay - 0.5) / 6), 0, 0, 0, 0.05, H - 1.9, 0.05), '#3b3f45', { r: 0.45, m: 0.6 });
     for (const yy of [2.2, 3.3]) b.add(UNIT.box, mat(xl, yy, z, 0, 0, 0, 0.04, 0.04, bay - 0.5), '#3b3f45', { r: 0.4, m: 0.7 });
   }
   // Exterieur visible par les fenetres.
@@ -230,7 +230,7 @@ export function buildCourt(r: Rng, part: CourtPart, img: ZoneImages): { geo: THR
   for (const side of [-1, 1]) {
     addCampusCurb(b, side, z0, z1);
     // Accotement en laterite puis herbe seche.
-    b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 3), 0.1, 0, 0, 0, 0, 6, 0.2, L), '#b0603a', { r: 1 });
+    b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 3.35), 0.085, 0, 0, 0, 0, 6, 0.17, L), '#b0603a', { r: 1 });
     b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 14), 0.09, 0, 0, 0, 0, 16, 0.18, L), '#8d9a4a', { r: 1 });
     // Arbres d'ombrage, quelques flamboyants et palmiers.
     addShadeTree(b, side * (SIDEWALK_OUT + range(r, 1.5, 4)), 0.2, z0 - range(r, 3, 12), r, range(r, 0.9, 1.2));

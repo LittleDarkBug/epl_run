@@ -27,9 +27,11 @@ export class Renderer {
   private bloom: BloomEffect;
   private chroma: ChromaticAberrationEffect;
   private maxDpr: number;
+  private minDpr: number;
+  private slowTime = 0;
+  private fastTime = 0;
   private dpr: number;
   private frameTimes: number[] = [];
-  private lastAdjust = 0;
   private chromaAmount = 0;
 
   constructor(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
@@ -44,11 +46,12 @@ export class Renderer {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = this.tier === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer = renderer;
 
     const deviceDpr = Math.min(window.devicePixelRatio || 1, 3);
-    this.maxDpr = this.tier === 'high' ? Math.min(deviceDpr, 2) : this.tier === 'medium' ? Math.min(deviceDpr, 1.6) : Math.min(deviceDpr, 1.2);
+    this.maxDpr = this.tier === 'high' ? Math.min(deviceDpr, 2) : this.tier === 'medium' ? Math.min(deviceDpr, 1.85) : Math.min(deviceDpr, 1.6);
+    this.minDpr = Math.min(this.maxDpr, this.tier === 'low' ? 1.1 : 1.25);
     this.dpr = this.maxDpr;
     renderer.setPixelRatio(this.dpr);
 
@@ -61,9 +64,9 @@ export class Renderer {
 
     this.bloom = new BloomEffect({
       mipmapBlur: true,
-      intensity: 1.05,
-      luminanceThreshold: 0.82,
-      luminanceSmoothing: 0.22,
+      intensity: 0.85,
+      luminanceThreshold: 0.92,
+      luminanceSmoothing: 0.3,
       radius: 0.78,
       levels: this.tier === 'low' ? 5 : 7,
     });
@@ -77,18 +80,14 @@ export class Renderer {
     const sat = new HueSaturationEffect({ saturation: 0.08 });
     const bc = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.06 });
 
-    const effects = [this.bloom, tone, sat, bc, vignette];
-    if (this.tier !== 'low') {
-      const smaa = new SMAAEffect({ preset: this.tier === 'high' ? SMAAPreset.HIGH : SMAAPreset.MEDIUM });
-      this.composer.addPass(new EffectPass(camera, this.bloom, this.chroma, tone, sat, bc, vignette));
-      this.composer.addPass(new EffectPass(camera, smaa));
-    } else {
-      this.composer.addPass(new EffectPass(camera, ...effects));
-    }
+    // SMAA a tous les niveaux : sans lui, les aretes fines scintillent en mouvement.
+    const smaa = new SMAAEffect({ preset: this.tier === 'high' ? SMAAPreset.HIGH : this.tier === 'medium' ? SMAAPreset.MEDIUM : SMAAPreset.LOW });
+    this.composer.addPass(new EffectPass(camera, this.bloom, this.chroma, tone, sat, bc, vignette));
+    this.composer.addPass(new EffectPass(camera, smaa));
   }
 
   get shadowMapSize(): number {
-    return this.tier === 'high' ? 2048 : this.tier === 'medium' ? 1536 : 1024;
+    return this.tier === 'low' ? 1536 : 2048;
   }
 
   setCamera(camera: THREE.PerspectiveCamera) {
@@ -112,23 +111,30 @@ export class Renderer {
     this.adapt(dt);
   }
 
-  // Resolution dynamique : baisse si la frame depasse ~19 ms, remonte si < 13 ms.
+  // Resolution dynamique avec hysteresis : on ne baisse qu'apres 2 s de
+  // frames lentes, on ne remonte qu'apres 6 s de marge, par petits pas, pour
+  // eviter l'effet de pompage de la nettete.
   private adapt(dt: number) {
     this.frameTimes.push(dt);
-    if (this.frameTimes.length > 45) this.frameTimes.shift();
-    const now = performance.now();
-    if (now - this.lastAdjust < 1500 || this.frameTimes.length < 45) return;
+    if (this.frameTimes.length > 60) this.frameTimes.shift();
+    if (this.frameTimes.length < 60) return;
     const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
+    this.slowTime = avg > 0.024 ? this.slowTime + dt : 0;
+    this.fastTime = avg < 0.0145 ? this.fastTime + dt : 0;
     let next = this.dpr;
-    if (avg > 0.0195) next = Math.max(0.6, this.dpr * 0.85);
-    else if (avg < 0.0135) next = Math.min(this.maxDpr, this.dpr * 1.08);
-    if (Math.abs(next - this.dpr) > 0.02) {
+    if (this.slowTime > 2) next = Math.max(this.minDpr, this.dpr - 0.15);
+    else if (this.fastTime > 6) next = Math.min(this.maxDpr, this.dpr + 0.1);
+    if (Math.abs(next - this.dpr) > 0.01) {
       this.dpr = next;
+      this.slowTime = this.fastTime = 0;
+      this.frameTimes.length = 0;
       const size = this.renderer.getSize(new THREE.Vector2());
       this.resize(size.x, size.y);
-      this.lastAdjust = now;
-      this.frameTimes.length = 0;
     }
+  }
+
+  get pixelRatio() {
+    return this.dpr;
   }
 }
 

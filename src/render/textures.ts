@@ -82,12 +82,14 @@ export interface RoadTextures {
   normalMap: THREE.CanvasTexture;
 }
 
-// Route : 9 m de large (u) sur 18 m de long (v).
+// Route : 9 m de large (u) sur 18 m de long (v). L'albedo est en double
+// resolution pour des marquages nets ; relief et rugosite restent doux pour
+// eviter tout scintillement speculaire.
 export function makeRoadTextures(maxAniso: number): RoadTextures {
   const W = 512, H = 1024;
   const pxPerM = W / 9;
-  const n = fbm(W, H, 7, 5, 8);
-  const fine = makeNoise(W, H, 256, 99);
+  const n = fbm(W, H, 7, 4, 6);
+  const mid = makeNoise(W, H, 64, 99);
   const height = new Float32Array(W * H);
 
   const [c, ctx] = canvas(W, H);
@@ -99,25 +101,20 @@ export function makeRoadTextures(maxAniso: number): RoadTextures {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
-      const m = x / pxPerM - 4.5; // metres depuis le centre
-      const lanePos = ((m + 1.25) % 2.5 + 2.5) % 2.5 - 1.25; // centre de voie a 0
-      const tire = Math.exp(-Math.pow((Math.abs(lanePos) - 0.62) / 0.22, 2));
-      const grain = fine[i];
-      let v = 0.22 + n[i] * 0.16 + (grain - 0.5) * 0.12;
-      v *= 1 - tire * 0.18;
-      // Poussiere de laterite sur les bords.
-      const edge = Math.max(0, (Math.abs(m) - 3.6) / 0.9);
-      let cr = v * 1.02, cg = v * 0.98, cb = v * 1.0;
-      cr = cr + edge * 0.28 * n[i];
-      cg = cg + edge * 0.12 * n[i];
-      cb = cb + edge * 0.05 * n[i];
-      height[i] = grain * 0.6 + n[i] * 0.4;
+      const m = x / pxPerM - 4.5;
+      const lanePos = ((m + 1.25) % 2.5 + 2.5) % 2.5 - 1.25;
+      // Traces de roues legerement plus sombres et plus lisses.
+      const tire = Math.exp(-Math.pow((Math.abs(lanePos) - 0.62) / 0.28, 2));
+      let v = 0.2 + n[i] * 0.1 + (mid[i] - 0.5) * 0.04;
+      v *= 1 - tire * 0.12;
+      const edge = Math.max(0, Math.min(1, (Math.abs(m) - 3.7) / 0.8));
       const o = i * 4;
-      img.data[o] = Math.min(255, cr * 255);
-      img.data[o + 1] = Math.min(255, cg * 255);
-      img.data[o + 2] = Math.min(255, cb * 255);
+      img.data[o] = Math.min(255, (v + edge * 0.16 * n[i]) * 255);
+      img.data[o + 1] = Math.min(255, (v * 0.98 + edge * 0.07 * n[i]) * 255);
+      img.data[o + 2] = Math.min(255, (v * 1.02 + edge * 0.02 * n[i]) * 255);
       img.data[o + 3] = 255;
-      const rough = 0.78 + grain * 0.18 - tire * 0.2;
+      height[i] = n[i] * 0.7 + mid[i] * 0.3;
+      const rough = 0.86 + (mid[i] - 0.5) * 0.06 - tire * 0.1;
       rimg.data[o] = rimg.data[o + 1] = rimg.data[o + 2] = Math.max(0, Math.min(255, rough * 255));
       rimg.data[o + 3] = 255;
     }
@@ -125,68 +122,60 @@ export function makeRoadTextures(maxAniso: number): RoadTextures {
   ctx.putImageData(img, 0, 0);
   rctx.putImageData(rimg, 0, 0);
 
-  // Rustines de bitume et fissures.
-  for (let k = 0; k < 7; k++) {
-    const px = r() * W, py = r() * H, w = 40 + r() * 120, h = 40 + r() * 160;
-    ctx.fillStyle = `rgba(20,20,24,${0.18 + r() * 0.2})`;
+  // Rustines de bitume aux bords adoucis.
+  for (let k = 0; k < 5; k++) {
+    const px = r() * W, py = r() * H, w = 50 + r() * 110, h = 60 + r() * 160;
+    const g = ctx.createLinearGradient(px, py, px + w, py);
+    g.addColorStop(0, 'rgba(18,18,22,0)');
+    g.addColorStop(0.1, `rgba(18,18,22,${0.12 + r() * 0.12})`);
+    g.addColorStop(0.9, `rgba(18,18,22,${0.12 + r() * 0.12})`);
+    g.addColorStop(1, 'rgba(18,18,22,0)');
+    ctx.fillStyle = g;
     ctx.fillRect(px, py, w, h);
-    rctx.fillStyle = 'rgba(150,150,150,0.5)';
-    rctx.fillRect(px, py, w, h);
   }
-  ctx.strokeStyle = 'rgba(10,10,12,0.55)';
-  ctx.lineWidth = 1.4;
-  for (let k = 0; k < 18; k++) {
+  // Quelques fissures fines et discretes.
+  ctx.strokeStyle = 'rgba(12,12,14,0.35)';
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 8; k++) {
     let px = r() * W, py = r() * H;
     ctx.beginPath();
     ctx.moveTo(px, py);
-    for (let s = 0; s < 8; s++) {
-      px += (r() - 0.5) * 30;
-      py += r() * 25;
+    for (let st = 0; st < 6; st++) {
+      px += (r() - 0.5) * 24;
+      py += r() * 22;
       ctx.lineTo(px, py);
     }
     ctx.stroke();
   }
-  // Taches d'huile brillantes au centre des voies.
-  for (let k = 0; k < 10; k++) {
-    const lane = Math.floor(r() * 3) - 1;
-    const px = (lane * 2.5 + 4.5 + (r() - 0.5) * 0.6) * pxPerM, py = r() * H;
-    const g = ctx.createRadialGradient(px, py, 0, px, py, 26);
-    g.addColorStop(0, 'rgba(8,8,10,0.5)');
-    g.addColorStop(1, 'rgba(8,8,10,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(px - 30, py - 30, 60, 60);
-    const rg = rctx.createRadialGradient(px, py, 0, px, py, 26);
-    rg.addColorStop(0, 'rgba(40,40,40,0.9)');
-    rg.addColorStop(1, 'rgba(40,40,40,0)');
-    rctx.fillStyle = rg;
-    rctx.fillRect(px - 30, py - 30, 60, 60);
-  }
 
-  // Marquages : pointilles entre voies, lignes de rive.
+  // Albedo final en double resolution avec marquages nets.
+  const [hc, hctx] = canvas(W * 2, H * 2);
+  hctx.imageSmoothingQuality = 'high';
+  hctx.drawImage(c, 0, 0, W * 2, H * 2);
+  const S = 2 * pxPerM;
   const paint = (mx: number, width: number, dash: number, gap: number, color: string) => {
-    const x = (mx + 4.5) * pxPerM;
-    const wpx = width * pxPerM;
-    for (let y = 0; y < H; y += (dash + gap) * (H / 18)) {
-      ctx.fillStyle = color;
-      ctx.fillRect(x - wpx / 2, y, wpx, dash * (H / 18));
-      rctx.fillStyle = 'rgb(120,120,120)';
-      rctx.fillRect(x - wpx / 2, y, wpx, dash * (H / 18));
-      // Usure de la peinture.
-      for (let s = 0; s < 40; s++) {
-        ctx.fillStyle = 'rgba(40,40,44,0.6)';
-        ctx.fillRect(x - wpx / 2 + r() * wpx, y + r() * dash * (H / 18), 2 + r() * 3, 2 + r() * 4);
-      }
+    const x = (mx + 4.5) * S;
+    const wpx = width * S;
+    const step = (dash + gap) * S;
+    for (let y = 0; y < H * 2; y += step) {
+      hctx.fillStyle = color;
+      hctx.fillRect(x - wpx / 2, y, wpx, dash * S);
+      // Usure legere : zones un peu plus transparentes, sans taches.
+      hctx.fillStyle = 'rgba(40,40,44,0.18)';
+      for (let k = 0; k < 3; k++) hctx.fillRect(x - wpx / 2, y + r() * dash * S, wpx, (0.1 + r() * 0.3) * S);
+      rctx.fillStyle = 'rgb(165,165,165)';
+      rctx.fillRect((mx + 4.5) * pxPerM - width * pxPerM / 2, y / 2, width * pxPerM, (dash * S) / 2);
     }
   };
-  paint(-1.25, 0.14, 3, 3, 'rgba(235,232,220,0.92)');
-  paint(1.25, 0.14, 3, 3, 'rgba(235,232,220,0.92)');
-  paint(-4.05, 0.16, 18, 0, 'rgba(240,196,40,0.9)');
-  paint(4.05, 0.16, 18, 0, 'rgba(240,196,40,0.9)');
+  paint(-1.25, 0.14, 3, 3, 'rgba(232,230,220,0.9)');
+  paint(1.25, 0.14, 3, 3, 'rgba(232,230,220,0.9)');
+  paint(-4.05, 0.15, 18, 0, 'rgba(236,190,40,0.9)');
+  paint(4.05, 0.15, 18, 0, 'rgba(236,190,40,0.9)');
 
-  const map = new THREE.CanvasTexture(c);
+  const map = new THREE.CanvasTexture(hc);
   map.colorSpace = THREE.SRGBColorSpace;
   const roughnessMap = new THREE.CanvasTexture(rc);
-  const normalMap = new THREE.CanvasTexture(normalFromHeight(height, W, H, 2.2));
+  const normalMap = new THREE.CanvasTexture(normalFromHeight(height, W, H, 0.9));
   for (const t of [map, roughnessMap, normalMap]) {
     t.wrapS = THREE.ClampToEdgeWrapping;
     t.wrapT = THREE.RepeatWrapping;
@@ -213,11 +202,11 @@ export function makePaverTextures(maxAniso: number): { map: THREE.CanvasTexture;
       const ox = row % 2 ? t / 2 : 0;
       const lx = (x + ox) % t, ly = y % t;
       const d = Math.min(lx, ly, t - lx, t - ly);
-      const joint = d < 2.5 ? 0 : 1;
-      const bevel = Math.min(1, d / 6);
+      const joint = Math.min(1, Math.max(0, (d - 1.5) / 1.5));
+      const bevel = Math.min(1, d / 8);
       const tileId = Math.floor((x + ox) / t) + row * 7;
       const tint = 0.85 + ((tileId * 9301 + 49297) % 233280) / 233280 * 0.2;
-      const v = (0.55 + n[i] * 0.25) * tint * (joint ? 1 : 0.45);
+      const v = (0.58 + n[i] * 0.18) * tint * (0.6 + 0.4 * joint);
       height[i] = joint * bevel * 0.8 + n[i] * 0.2;
       const o = i * 4;
       img.data[o] = v * 222;
@@ -235,10 +224,11 @@ export function makePaverTextures(maxAniso: number): { map: THREE.CanvasTexture;
   }
   const map = new THREE.CanvasTexture(c);
   map.colorSpace = THREE.SRGBColorSpace;
-  const normalMap = new THREE.CanvasTexture(normalFromHeight(height, S, S, 3));
+  const normalMap = new THREE.CanvasTexture(normalFromHeight(height, S, S, 1.2));
   for (const tex of [map, normalMap]) {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = maxAniso;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
   }
   return { map, normalMap };
 }

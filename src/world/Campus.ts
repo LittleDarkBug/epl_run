@@ -28,9 +28,9 @@ export class Campus {
 
     // Parkings en laterite de part et d'autre.
     for (const side of [-1, 1]) {
-      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 16), 0.1, (FRONT - 8) / 2, 0, 0, 0, 32, 0.2, FRONT + 8), '#b0603a', { r: 1 });
+      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 16.35), 0.085, (FRONT - 8) / 2, 0, 0, 0, 32, 0.17, FRONT + 8), '#b0603a', { r: 1 });
       // Herbe seche en bordure.
-      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 16), 0.1, -12, 0, 0, 0, 32, 0.2, 8), '#8d9a4a', { r: 1 });
+      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 16.35), 0.08, -12, 0, 0, 0, 32, 0.16, 8), '#8d9a4a', { r: 1 });
     }
     // Esplanade devant le passage.
     b.add(UNIT.box, mat(0, 0.12, FRONT - 1.5, 0, 0, 0, ROAD_HALF * 2 + 6, 0.24, 3), '#c9c2b2', { r: 0.9 });
