@@ -5,6 +5,9 @@ import '@fontsource/outfit/latin-800.css';
 import './style.css';
 import { Game } from './core/Game';
 import { loadCharacters } from './actors/characters';
+import { registerServiceWorker } from './core/Platform';
+
+registerServiceWorker();
 
 // Point d'entree : polices, images du logo, puis construction du jeu.
 

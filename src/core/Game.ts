@@ -14,6 +14,7 @@ import { rimUniform } from '../actors/materials';
 import type { Characters } from '../actors/characters';
 import { Input, Action } from './Input';
 import { Audio } from './Audio';
+import { Installer, canFullscreen, enterFullscreen, exitFullscreen, isFullscreen, isStandalone } from './Platform';
 import { UI } from '../ui/UI';
 import { StoryPlayer, Shot } from '../ui/Story';
 import { CHASER, PLAYER, POWERUP_TIME, SPEED, laneX } from '../config';
@@ -55,6 +56,7 @@ export class Game {
   private audio = new Audio();
   private input: Input;
   private story = new StoryPlayer();
+  private installer = new Installer();
   private shot: Shot = 'wide';
   private shotTime = 0;
   private lastTime = 0;
@@ -120,8 +122,18 @@ export class Game {
     this.tutorialDone = store.get('tuto', 0) === 1;
     this.ui.setMuted(this.audio.muted);
 
-    this.ui.on('play', () => this.startRun());
-    this.ui.on('story-btn', () => this.startStory());
+    // Chaque lancement (geste utilisateur) passe en plein ecran.
+    this.ui.on('play', () => {
+      void enterFullscreen();
+      this.startRun();
+    });
+    this.ui.on('story-btn', () => {
+      void enterFullscreen();
+      this.startStory();
+    });
+    this.setupPlatform();
+    // Acces de debogage pour les tests automatises (?debug).
+    if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __game: Game }).__game = this;
     this.story.onEnd = () => this.endStory();
     this.story.onStamp = () => {
       this.audio.stamp();
@@ -144,7 +156,10 @@ export class Game {
       if (b.speaker === 'LE GARDIEN DE L\'EPL') this.chaser.setAngry(1);
       if (b.pose) this.player.play(b.pose);
     };
-    this.ui.on('retry', () => this.restart(true));
+    this.ui.on('retry', () => {
+      void enterFullscreen();
+      this.restart(true);
+    });
     this.ui.on('menu-btn', () => this.restart(false));
     this.ui.on('pause-btn', () => this.pause());
     this.ui.on('resume', () => this.resume());
@@ -159,6 +174,34 @@ export class Game {
     });
     window.addEventListener('resize', () => this.resize());
     window.visualViewport?.addEventListener('resize', () => this.resize());
+  }
+
+  private setupPlatform() {
+    const fsBtn = document.getElementById('fs-btn')!;
+    const installBtn = document.getElementById('install-btn')!;
+    const iosModal = document.getElementById('ios-install')!;
+    const refresh = () => {
+      const showFs = canFullscreen() && !isStandalone();
+      fsBtn.classList.toggle('hidden', !showFs);
+      fsBtn.classList.toggle('on', isFullscreen());
+      document.documentElement.style.setProperty('--hud-right', showFs ? '126px' : '72px');
+      installBtn.classList.toggle('hidden', this.installer.mode === null);
+    };
+    this.installer.onChange = refresh;
+    document.addEventListener('fullscreenchange', refresh);
+    document.addEventListener('webkitfullscreenchange', refresh);
+    fsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (isFullscreen()) void exitFullscreen();
+      else void enterFullscreen();
+    });
+    installBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.installer.mode === 'prompt') void this.installer.prompt();
+      else if (this.installer.mode === 'ios') iosModal.classList.add('active');
+    });
+    this.ui.on('ios-close', () => iosModal.classList.remove('active'));
+    refresh();
   }
 
   async load(assets: Assets) {

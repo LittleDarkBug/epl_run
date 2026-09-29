@@ -11,7 +11,15 @@ npm run build    # version de production dans dist/
 npm run preview  # sert la version de production
 ```
 
-Commandes : glisser le doigt à gauche ou à droite pour changer de voie, vers le haut pour sauter, vers le bas pour glisser. Au clavier : flèches, espace et Échap.
+Commandes : glisser le doigt à gauche ou à droite pour changer de voie, vers le haut pour sauter, vers le bas pour glisser. Un geste correspond toujours à une seule action, même s'il est long. Au clavier : flèches, espace et Échap.
+
+## Application installable (PWA)
+
+- Installable depuis le menu (bouton « Installer le jeu ») sur Android et ordinateur, ou via Partager puis « Sur l'écran d'accueil » sur iPhone et iPad (la marche à suivre s'affiche dans le jeu).
+- Une fois installé, le jeu s'ouvre en plein écran et en portrait, et fonctionne hors ligne : le service worker généré au build (`dist/sw.js`) précharge tout le jeu.
+- Dans le navigateur, chaque lancement de partie passe en plein écran quand l'appareil le permet, et un bouton permet de basculer. Safari sur iPhone n'autorise le plein écran qu'aux applications installées.
+- Les icônes sont générées par `python3 tools/make-icons.py <police ArchivoBlack.ttf>`.
+- Le service worker n'est actif qu'en production : tester avec `npm run build` puis `npm run preview`, en HTTPS ou sur localhost.
 
 ## Contenu
 
