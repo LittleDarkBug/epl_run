@@ -6,6 +6,7 @@ import './style.css';
 import { Game } from './core/Game';
 import { loadCharacters } from './actors/characters';
 import { registerServiceWorker } from './core/Platform';
+import { loadBaked, loadTrees } from './world/assets';
 
 registerServiceWorker();
 
@@ -31,14 +32,16 @@ async function boot() {
     new Promise((r) => setTimeout(r, 2500)),
   ]).catch(() => undefined);
   const fill = document.getElementById('progress-fill');
-  const [logoFull, wordmark, characters] = await Promise.all([
+  const [logoFull, wordmark, characters, campus, trees] = await Promise.all([
     loadImage(`${base}textures/logo_full.png`),
     loadImage(`${base}textures/epl_wordmark.png`),
-    loadCharacters(base, (p) => { if (fill) fill.style.width = `${Math.round(p * 60)}%`; }),
+    loadCharacters(base, (p) => { if (fill) fill.style.width = `${Math.round(p * 40)}%`; }),
+    loadBaked(base, 'campus', 'campus.glb', (p) => { if (fill) fill.style.width = `${Math.round(40 + p * 30)}%`; }),
+    loadTrees(base),
     fonts,
   ]);
   const game = new Game(canvas);
-  await game.load({ logoFull, wordmark, characters });
+  await game.load({ logoFull, wordmark, characters, campus, trees });
 }
 
 boot().catch((err) => {

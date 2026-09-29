@@ -12,6 +12,7 @@ import { Player } from '../actors/Player';
 import { Chaser } from '../actors/Chaser';
 import { rimUniform } from '../actors/materials';
 import type { Characters } from '../actors/characters';
+import type { BakedAsset } from '../world/assets';
 import { Input, Action } from './Input';
 import { Audio } from './Audio';
 import { Installer, canFullscreen, enterFullscreen, exitFullscreen, isFullscreen, isStandalone } from './Platform';
@@ -26,6 +27,8 @@ interface Assets {
   logoFull: HTMLImageElement;
   wordmark: HTMLImageElement;
   characters: Characters;
+  campus: BakedAsset;
+  trees: THREE.Object3D[];
 }
 
 const store = {
@@ -209,7 +212,7 @@ export class Game {
     const steps: [number, () => void][] = [
       [0.1, () => this.setupLights()],
       [0.3, () => (this.world = new World(this.renderer.renderer.capabilities.getMaxAnisotropy(), assets))],
-      [0.45, () => (this.campus = new Campus(assets.logoFull, assets.wordmark))],
+      [0.45, () => (this.campus = new Campus(assets.campus, assets.trees))],
       [0.65, () => (this.track = new Track())],
       [0.8, () => this.setupActors(assets)],
       [0.9, () => this.setupEnv()],
@@ -872,7 +875,7 @@ export class Game {
     const cx = this.chaserX, cz = this.chaserDist;
     switch (shot) {
       case 'wide':
-        return { pos: new THREE.Vector3(-7 + d * 0.5, 4.5 - d * 0.15, -15 * k + d * 1.0), look: new THREE.Vector3(0, 5.5, 14) };
+        return { pos: new THREE.Vector3(-2.5 + d * 0.3, 3.4 - d * 0.1, -12 * k + d * 0.9), look: new THREE.Vector3(0, 6.5, 16) };
       case 'doc':
         return { pos: new THREE.Vector3(-1.2 + d * 0.08, 1.7, -3.3 * k + d * 0.1), look: new THREE.Vector3(0.9, 2.1, 1) };
       case 'hero':

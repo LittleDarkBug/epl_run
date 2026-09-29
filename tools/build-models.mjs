@@ -20,3 +20,11 @@ for (const [file, keep] of Object.entries(KEEP)) {
   await io.write(`public/models/${file}`, doc);
   console.log('ecrit', file);
 }
+
+// Decors cuits dans Blender : compression seule (textures deja en JPEG).
+for (const [src, dst] of [['assets-src/campus/campus.glb', 'public/models/campus/campus.glb'], ['assets-src/trees/trees.glb', 'public/models/trees.glb']]) {
+  const doc = await io.read(src);
+  await doc.transform(dedup(), prune(), quantize(), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
+  await io.write(dst, doc);
+  console.log('ecrit', dst);
+}

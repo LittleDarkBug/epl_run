@@ -49,6 +49,17 @@ Les logos se trouvent dans `public/textures/`.
 - Les animations de course, d'attente et les gestes viennent du X Bot et sont transférées sur Afi au chargement par un retargeting maison (`src/actors/retarget.ts`). Saut, glissade, faux pas et chute sont des surcouches procédurales sur les os (`src/actors/Player.ts`).
 - `npm run dev` puis `/dev/preview.html?a=slide` (ou `?who=chaser&a=victory&v=front`) affiche un personnage isolé pour régler les poses.
 
+## Décor modélisé dans Blender
+
+Le départ (bâtiment de l'EPL, parking, haies) et les arbres sont modélisés par script dans Blender 5 (module Python `bpy`, sans interface), puis exportés en glTF :
+
+- `tools/blender/textures.py` : textures tuilables (crépi jaune, panneaux gris-bleu, béton, métal, tôle, latérite, herbe, haie, bâche) avec normal maps.
+- `tools/blender/build_campus.py` : tour d'entrée à panneaux avec passage et toit pyramidal, ailes à ouvertures en retrait, barreaux et auvents, sol et haies. L'occlusion ambiante est cuite par Cycles (images `public/models/campus/ao_*.jpg`, lues sur le second jeu d'UV).
+- `tools/blender/foliage.py` et `tools/blender/build_trees.py` : arbres d'ombrage (tronc et branches ramifiés, feuillage en cartes découpées).
+- `node tools/build-models.mjs` compresse ensuite les modèles (meshopt).
+
+Pour régénérer : installer `bpy` (`pip install bpy`, Python 3.11), puis lancer les scripts depuis la racine du projet avec ce Python. Les sources non compressées sont dans `assets-src/`.
+
 ## Crédits
 
 - Personnages Michelle (Afi) et X Bot (le Gardien), ainsi que leurs animations : Mixamo (Adobe), fichiers repris des exemples de three.js.
