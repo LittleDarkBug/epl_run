@@ -4,11 +4,12 @@ import { createUberMaterial } from '../render/uber';
 import { applyBend } from '../render/curve';
 import { makeBannerTexture, makeChalkboardTexture } from '../render/textures';
 import { BUS_HEIGHT } from '../config';
+import { addCar, CAR_COLORS } from './Scenery';
 
 // Fabriques des obstacles. Chaque type est une geometrie fusionnee (1 appel
 // de rendu) avec quelques variantes de couleur.
 
-export type ObstacleType = 'barrier' | 'bench' | 'gate' | 'kiosk' | 'bus' | 'ramp' | 'moto' | 'books' | 'board';
+export type ObstacleType = 'barrier' | 'bench' | 'gate' | 'kiosk' | 'bus' | 'ramp' | 'moto' | 'books' | 'board' | 'car';
 
 export interface ObstacleSpec {
   len: number; // profondeur en z
@@ -31,6 +32,7 @@ export const SPECS: Record<ObstacleType, ObstacleSpec> = {
   moto: { len: 1.9, halfW: 0.55, y0: 0, y1: 1.5, low: true },
   books: { len: 0.9, halfW: 1.05, y0: 0, y1: 1.1, low: true },
   board: { len: 0.7, halfW: 1.1, y0: 0, y1: 2.6, top: 2.6 },
+  car: { len: 4.3, halfW: 0.95, y0: 0, y1: 1.55, top: 1.55 },
 };
 
 const uber = createUberMaterial({ grime: 0.12 });
@@ -309,9 +311,14 @@ export function createObstacle(type: ObstacleType, variant: number): THREE.Objec
     case 'moto': return moto(variant);
     case 'books': return books(variant);
     case 'board': return board(variant);
+    case 'car': {
+      const b = new GeoBuilder();
+      addCar(b, new THREE.Matrix4(), CAR_COLORS[variant % CAR_COLORS.length]);
+      return meshFrom(b);
+    }
   }
 }
 
 export const VARIANTS: Record<ObstacleType, number> = {
-  barrier: 2, bench: 2, gate: BANNERS.length, kiosk: 4, bus: 4, ramp: 1, moto: 3, books: 3, board: 4,
+  barrier: 2, bench: 2, gate: BANNERS.length, kiosk: 4, bus: 4, ramp: 1, moto: 3, books: 3, board: 4, car: 7,
 };

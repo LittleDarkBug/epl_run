@@ -15,9 +15,12 @@ Commandes : glisser le doigt à gauche ou à droite pour changer de voie, vers l
 
 ## Contenu
 
+- Départ fidèle au vrai bâtiment de l'EPL : tour gris-bleu avec le panneau UL / EPL et son toit vert, ailes jaunes à barreaux et auvents, parking en latérite, motos et voitures garées.
+
+
 - Cinématique d'ouverture : le cauchemar administratif (guichets, tampons, réveil du Gardien), rejouable depuis le menu.
-- Trois zones qui s'enchaînent : rues de Lomé, couloirs des bâtiments de l'EPL, cour de l'Université de Lomé.
-- Obstacles : barrières de chantier, tables-bancs, piles de livres, tableaux noirs mobiles, banderoles d'examens, kiosques, minibus (avec rampes pour courir sur les toits), zemidjans à contresens.
+- Trois zones qui s'enchaînent : rues de Lomé, couloirs des bâtiments de l'EPL, routes du campus de l'UL (Pelouse centrale, Amphi 20, Grand Amphi FDS, UniPod).
+- Obstacles : barrières de chantier, tables-bancs, piles de livres, tableaux noirs mobiles, voitures garées (on peut sauter dessus), banderoles d'examens, kiosques, minibus (avec rampes pour courir sur les toits), zemidjans à contresens.
 - À ramasser : cahiers aux couleurs du logo EPL, diplômes (gros bonus), aimant, super baskets, bonne note x2.
 - Le Gardien de l'EPL : colosse bleu en toque de diplômé, logo EPL sur le torse et sur la cape. Deux faux pas rapprochés et il t'attrape.
 

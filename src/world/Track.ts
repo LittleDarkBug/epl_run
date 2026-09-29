@@ -58,9 +58,9 @@ const MAX_COINS = 260;
 
 interface ZoneSet { low: ObstacleType[]; high: ObstacleType[]; full: ObstacleType[]; bus: boolean; moto: boolean }
 const ZONE_SET: Record<Zone, ZoneSet> = {
-  street: { low: ['barrier', 'barrier', 'bench'], high: ['gate'], full: ['kiosk'], bus: true, moto: true },
+  street: { low: ['barrier', 'barrier', 'bench'], high: ['gate'], full: ['kiosk', 'car'], bus: true, moto: true },
   corridor: { low: ['books', 'books', 'bench'], high: ['gate'], full: ['board'], bus: false, moto: false },
-  court: { low: ['bench', 'barrier', 'books'], high: ['gate'], full: ['kiosk', 'board'], bus: true, moto: false },
+  court: { low: ['bench', 'barrier', 'books'], high: ['gate'], full: ['car', 'car', 'kiosk'], bus: true, moto: true },
 };
 
 // Couleurs des cahiers : bandes du logo EPL.
@@ -122,7 +122,7 @@ export class Track {
     for (let i = 0; i < MAX_COINS; i++) this.coinMesh.setColorAt(i, NOTEBOOK_COLORS[0]);
 
     // Pre-remplissage des pools pour eviter les saccades en jeu.
-    const warm: [ObstacleType, number][] = [['barrier', 6], ['bench', 4], ['gate', 3], ['kiosk', 4], ['bus', 4], ['ramp', 3], ['moto', 2]];
+    const warm: [ObstacleType, number][] = [['barrier', 6], ['bench', 4], ['gate', 3], ['kiosk', 4], ['bus', 4], ['ramp', 3], ['moto', 2], ['books', 4], ['board', 3], ['car', 7]];
     for (const [t, n] of warm) {
       for (let v = 0; v < VARIANTS[t]; v++) {
         const key = `${t}:${v}`;

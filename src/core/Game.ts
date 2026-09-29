@@ -651,12 +651,12 @@ export class Game {
 
     // Gardien.
     if (this.warn > 0) this.warn -= dt;
-    const introHold = this.state === 'intro' ? lerp(4.4, 2.9, clamp((this.stateTime - 1) / 0.8, 0, 1)) : null;
+    const introHold = this.state === 'intro' ? (this.stateTime < 1.05 ? 4.4 : CHASER.farDistance) : null;
     const target = introHold ?? (this.warn > 0 ? CHASER.nearDistance : CHASER.farDistance);
-    const rate = this.warn > 0 ? 3 : 0.45;
+    const rate = this.warn > 0 ? 3 : this.state === 'intro' ? 2.5 : 0.45;
     this.chaserDist = damp(this.chaserDist, target, rate, dt);
     if (this.state === 'intro' && this.stateTime < 1.05) this.chaserDist = 4.4;
-    this.chaserX = damp(this.chaserX, this.x + (this.x <= 0 ? 1.15 : -1.15), 3, dt);
+    this.chaserX = damp(this.chaserX, this.x + (this.x <= 0 ? 1.4 : -1.4), 3, dt);
     this.chaser.setAngry(this.warn > 0 ? 1 : 0);
     this.audio.setIntensity(this.warn > 0 ? 1 : 0);
     this.ui.setDanger(this.warn > 0);
@@ -812,7 +812,7 @@ export class Game {
     const cx = this.chaserX, cz = this.chaserDist;
     switch (shot) {
       case 'wide':
-        return { pos: new THREE.Vector3(-6 + d * 0.5, 7.5 - d * 0.3, -17 * k + d * 1.1), look: new THREE.Vector3(0, 3.2, 5) };
+        return { pos: new THREE.Vector3(-7 + d * 0.5, 4.5 - d * 0.15, -15 * k + d * 1.0), look: new THREE.Vector3(0, 5.5, 14) };
       case 'doc':
         return { pos: new THREE.Vector3(-1.2 + d * 0.08, 1.7, -3.3 * k + d * 0.1), look: new THREE.Vector3(0.9, 2.1, 1) };
       case 'hero':

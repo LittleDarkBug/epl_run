@@ -3,155 +3,117 @@ import { GeoBuilder, mat, UNIT } from '../render/GeoBuilder';
 import { createUberMaterial } from '../render/uber';
 import { applyBend } from '../render/curve';
 import { makeLogoPlate } from '../render/textures';
-import { mulberry } from '../core/rng';
-import { addBush, addPalm, SIDEWALK_OUT, SIDEWALK_Y, ROAD_HALF, addCurb, addLamp } from './Scenery';
+import { mulberry, pick, range } from '../core/rng';
+import {
+  addBush, addCampusCurb, addCar, addEplWing, addMoto, addShadeTree, addSlimLamp, addSpeedSign,
+  CAR_COLORS, EPL_GREYBLUE, EPL_TEAL, ROAD_HALF, SIDEWALK_OUT,
+} from './Scenery';
 
-// Point de depart : le portail monumental de l'EPL, les batiments du campus
-// et les drapeaux. Le joueur s'en echappe au lancement de la partie.
+// Point de depart fidele au vrai batiment de l'EPL : tour d'entree gris-bleu
+// avec le panneau UL / EPL et son toit pyramidal vert, passage couvert au
+// rez-de-chaussee, ailes jaunes a barreaux et auvents, parking en laterite
+// rempli de voitures et de motos, grands arbres d'ombrage.
 
-const BLUE = '#1446a0';
-const WHITE = '#f4f2ec';
+const FRONT = 16; // z de la facade (tournee vers le joueur, qui regarde -z en course)
 
 export class Campus {
   readonly group = new THREE.Group();
 
-  constructor(logoFull: HTMLImageElement, wordmark: HTMLImageElement) {
+  constructor(logoFull: HTMLImageElement, _wordmark: HTMLImageElement) {
     const b = new GeoBuilder();
     const r = mulberry(77);
-    const gateZ = 7;
 
+    // Route d'acces bordee de blocs rouges et blancs.
+    for (const side of [-1, 1]) addCampusCurb(b, side, FRONT, -6);
+
+    // Parkings en laterite de part et d'autre.
     for (const side of [-1, 1]) {
-      addCurb(b, side, 60, -4);
-      // Piliers du portail.
-      const px = side * (ROAD_HALF + 1.4);
-      b.add(UNIT.box, mat(px, 4, gateZ, 0, 0, 0, 1.6, 8, 1.6), WHITE, { r: 0.8 });
-      b.add(UNIT.box, mat(px, 4, gateZ, 0, 0, 0, 1.7, 1.2, 1.7), BLUE, { r: 0.5, m: 0.2 });
-      b.add(UNIT.box, mat(px, 0.3, gateZ, 0, 0, 0, 1.9, 0.6, 1.9), '#9ca3af', { r: 0.9 });
-      b.add(UNIT.box, mat(px, 8.1, gateZ, 0, 0, 0, 1.9, 0.25, 1.9), BLUE, { r: 0.5, m: 0.2 });
-      // Lanterne sur pilier.
-      b.add(UNIT.box, mat(px, 8.55, gateZ, 0, 0, 0, 0.5, 0.65, 0.5), '#ffe3a8', { e: 4, r: 0.3 });
-      b.add(UNIT.box, mat(px, 8.95, gateZ, 0, 0, 0, 0.7, 0.12, 0.7), '#222', { r: 0.4, m: 0.6 });
-      // Mur d'enceinte.
-      const wallX0 = side * (ROAD_HALF + 2.2);
-      b.add(UNIT.box, mat(wallX0 + side * 6, 1.4, gateZ, 0, 0, 0, 12, 2.8, 0.45), WHITE, { r: 0.85 });
-      b.add(UNIT.box, mat(wallX0 + side * 6, 2.85, gateZ, 0, 0, 0, 12.2, 0.14, 0.6), BLUE, { r: 0.5 });
-      for (let i = 0; i < 12; i++) {
-        const c = ['#e41f26', '#f5d10d', '#0b9185', '#1455b8', '#c3199b'][i % 5];
-        b.add(UNIT.box, mat(wallX0 + side * (0.6 + i * 0.95), 1.6, gateZ - 0.24, 0, 0, -0.3, 0.12, 1.2, 0.04), c, { r: 0.6, e: 0.15 });
-      }
-      // Pelouses et palmiers du campus.
-      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 12), 0.1, gateZ + 25, 0, 0, 0, 24, 0.2, 50), '#5f8f3a', { r: 1 });
-      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 12), 0.1, gateZ - 6, 0, 0, 0, 24, 0.2, 12), '#5f8f3a', { r: 1 });
-      for (let i = 0; i < 4; i++) addPalm(b, side * (SIDEWALK_OUT + 1.5), SIDEWALK_Y, gateZ - 3 - i * 3.5 + (i % 2) * 0.8, 7 + i * 0.4, r);
-      for (let i = 0; i < 5; i++) addPalm(b, side * (SIDEWALK_OUT + 3 + (i % 2) * 4), 0.2, gateZ + 8 + i * 7, 8 + (i % 3), r);
-      for (let i = 0; i < 6; i++) addBush(b, side * (SIDEWALK_OUT + 0.8), 0.2, gateZ - 1.5 - i * 1.8, 0.9, r);
-      addLamp(b, side, gateZ - 8);
-
-      // Aile du batiment principal.
-      const bx = side * (SIDEWALK_OUT + 9);
-      const bz = gateZ + 22;
-      b.add(UNIT.box, mat(bx, 6, bz, 0, 0, 0, 14, 12, 16), WHITE, { r: 0.8 });
-      for (let f = 0; f < 3; f++) {
-        const y = 1.8 + f * 3.6;
-        b.add(UNIT.box, mat(bx, y + 1.4, bz - 8.05, 0, 0, 0, 13, 0.3, 0.2), BLUE, { r: 0.5 });
-        for (let i = 0; i < 6; i++) {
-          const lit = r() < 0.4;
-          b.add(UNIT.box, mat(bx - 5.4 + i * 2.15, y, bz - 8.04, 0, 0, 0, 1.6, 1.9, 0.1), lit ? '#ffc98a' : '#2d4460', lit ? { e: 1.3, r: 0.3 } : { r: 0.06, m: 0.5 });
-        }
-        // Pare-soleil verticaux.
-        for (let i = 0; i < 7; i++) b.add(UNIT.box, mat(bx - 6.45 + i * 2.15, y + 0.1, bz - 8.3, 0, 0, 0, 0.18, 3.2, 0.6), WHITE, { r: 0.8 });
-      }
-      b.add(UNIT.box, mat(bx, 12.2, bz, 0, 0, 0, 14.4, 0.5, 16.4), BLUE, { r: 0.5, m: 0.2 });
+      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 16), 0.1, (FRONT - 8) / 2, 0, 0, 0, 32, 0.2, FRONT + 8), '#b0603a', { r: 1 });
+      // Herbe seche en bordure.
+      b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 16), 0.1, -12, 0, 0, 0, 32, 0.2, 8), '#8d9a4a', { r: 1 });
     }
+    // Esplanade devant le passage.
+    b.add(UNIT.box, mat(0, 0.12, FRONT - 1.5, 0, 0, 0, ROAD_HALF * 2 + 6, 0.24, 3), '#c9c2b2', { r: 0.9 });
 
-    // Linteau du portail au-dessus de la route.
-    const span = (ROAD_HALF + 1.4) * 2;
-    b.add(UNIT.box, mat(0, 7.1, gateZ, 0, 0, 0, span + 1.6, 1.9, 1.1), WHITE, { r: 0.8 });
-    b.add(UNIT.box, mat(0, 6.1, gateZ, 0, 0, 0, span + 1.7, 0.18, 1.2), BLUE, { r: 0.5, m: 0.2 });
-    b.add(UNIT.box, mat(0, 8.1, gateZ, 0, 0, 0, span + 1.8, 0.2, 1.25), BLUE, { r: 0.5, m: 0.2 });
-    // Batiment central au fond, dans l'axe de la route.
-    const cz = gateZ + 40;
-    b.add(UNIT.box, mat(0, 8, cz, 0, 0, 0, 30, 16, 12), WHITE, { r: 0.8 });
-    b.add(UNIT.box, mat(0, 16.3, cz, 0, 0, 0, 30.5, 0.6, 12.5), BLUE, { r: 0.5, m: 0.2 });
-    for (let f = 0; f < 4; f++) {
-      for (let i = 0; i < 10; i++) {
-        const lit = r() < 0.45;
-        b.add(UNIT.box, mat(-12.6 + i * 2.8, 2.2 + f * 3.7, cz - 6.02, 0, 0, 0, 2.0, 2.1, 0.1), lit ? '#ffc98a' : '#2d4460', lit ? { e: 1.3, r: 0.3 } : { r: 0.06, m: 0.5 });
+    // Tour d'entree.
+    const tw = ROAD_HALF * 2 + 2.4;
+    const tdepth = 9;
+    const th = 13.5;
+    const tz = FRONT + tdepth / 2;
+    // Piles du passage et masse au-dessus.
+    for (const s of [-1, 1]) b.add(UNIT.box, mat(s * (tw / 2 - 0.6), 2.1, tz, 0, 0, 0, 1.2, 4.2, tdepth), EPL_GREYBLUE, { r: 0.8 });
+    b.add(UNIT.box, mat(0, (4.2 + th) / 2, tz, 0, 0, 0, tw, th - 4.2, tdepth), EPL_GREYBLUE, { r: 0.8 });
+    // Joints de panneaux.
+    for (let i = 1; i < 5; i++) b.add(UNIT.box, mat(-tw / 2 + i * (tw / 5), (4.2 + th) / 2, FRONT - 0.02, 0, 0, 0, 0.05, th - 4.2, 0.05), '#8e99a8', { r: 0.8 });
+    for (let j = 1; j < 4; j++) b.add(UNIT.box, mat(0, 4.2 + j * ((th - 4.2) / 4), FRONT - 0.02, 0, 0, 0, tw, 0.05, 0.05), '#8e99a8', { r: 0.8 });
+    // Plafond du passage et poutre.
+    b.add(UNIT.box, mat(0, 4.3, FRONT - 0.1, 0, 0, 0, tw, 0.4, 0.4), '#d8d8d4', { r: 0.8 });
+    b.add(UNIT.box, mat(0, 3.95, tz, 0, 0, 0, tw - 2.4, 0.1, tdepth), '#e9e6de', { r: 0.9 });
+    // Toit pyramidal vert.
+    const roof = new THREE.ConeGeometry(Math.hypot(tw, tdepth) / 2 + 0.6, 3.2, 4, 1);
+    b.add(roof, mat(0, th + 1.6, tz, 0, Math.PI / 4, 0, tw / Math.hypot(tw, tdepth) * 1.4, 1, tdepth / Math.hypot(tw, tdepth) * 1.4), '#4f8a5b', { r: 0.6, m: 0.2 });
+    b.add(UNIT.box, mat(0, th + 0.1, tz, 0, 0, 0, tw + 0.5, 0.25, tdepth + 0.5), '#d8d8d4', { r: 0.8 });
+    // Cadre du panneau.
+    b.add(UNIT.box, mat(0, th - 1.3, FRONT - 0.15, 0, 0, 0, tw - 0.6, 2.3, 0.2), '#1d2a44', { r: 0.5, m: 0.4 });
+    // Fond du passage : cour interieure lumineuse et arbres.
+    b.add(UNIT.box, mat(0, 0.05, FRONT + tdepth + 6, 0, 0, 0, 30, 0.1, 12), '#8d9a4a', { r: 1 });
+    addShadeTree(b, -3, 0, FRONT + tdepth + 5, r, 0.9);
+    addShadeTree(b, 5, 0, FRONT + tdepth + 8, r, 0.8);
+
+    // Ailes jaunes de part et d'autre de la tour.
+    for (const side of [-1, 1]) {
+      const len = 40;
+      const x0 = side > 0 ? tw / 2 : -tw / 2 - len;
+      addEplWing(b, new THREE.Matrix4().makeTranslation(x0, 0, FRONT + 1), len, r);
+      // Haie basse devant l'aile.
+      for (let x = tw / 2 + 1; x < tw / 2 + len; x += 1.8) {
+        b.add(UNIT.rbox, mat(side * x, 0.55, FRONT - 1.6, 0, 0, 0, 1.9, 1.0, 1.1), pick(r, ['#2f6b2c', '#3a7a31', '#356f2e']), { r: 0.9 });
       }
     }
-    // Esplanade.
-    b.add(UNIT.box, mat(0, 0.05, gateZ + 20, 0, 0, 0, ROAD_HALF * 2, 0.02, 1), '#f5f5f0', { r: 0.6 });
+    // Retour d'aile en fond (profondeur).
+    addEplWing(b, new THREE.Matrix4().makeTranslation(-60, 0, FRONT + 26), 120, r);
 
-    const mesh = new THREE.Mesh(b.build(), createUberMaterial({ grime: 0.12, groundAO: true }));
+    // Voitures garees sur la laterite.
+    const cars: [number, number, number][] = [[-11, 9, 0], [-15, 8, 0.1], [-24, 7, -0.05], [12, 10, 0], [21, 3, 1.57], [-19, 1, 1.5]];
+    for (const [x, z, ry] of cars) addCar(b, new THREE.Matrix4().makeTranslation(x, 0.2, z).multiply(new THREE.Matrix4().makeRotationY(ry)), pick(r, CAR_COLORS));
+    // Rangee de motos (zemidjans) devant l'aile droite.
+    for (let i = 0; i < 12; i++) {
+      addMoto(b, new THREE.Matrix4().makeTranslation(10 + i * 0.95, 0.2, FRONT - 3.4 + (i % 2) * 0.3).multiply(new THREE.Matrix4().makeRotationY(0.15)),
+        pick(r, ['#1e1e1e', '#b91c1c', '#1d4ed8', '#6b7280', '#c2410c']), r() < 0.4);
+    }
+    // Grands arbres d'ombrage.
+    for (const [x, z, s] of [[-9, 4, 1.1], [-20, 12, 1], [15, 6, 1.15], [27, 12, 0.9], [-30, 3, 1], [9, -8, 0.9], [-10, -10, 1]] as const) {
+      addShadeTree(b, x, 0.2, z, r, s);
+    }
+    for (let i = 0; i < 5; i++) addBush(b, range(r, -30, 30) + (r() < 0.5 ? -10 : 10), 0.2, range(r, -12, 12), 0.9, r, false);
+    addSlimLamp(b, -1, 6);
+    addSlimLamp(b, 1, -6);
+    addSpeedSign(b, -1, -3);
+
+    const mesh = new THREE.Mesh(b.build(), createUberMaterial({ grime: 0.16, groundAO: true }));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     this.group.add(mesh);
 
-    // Logo complet (Universite de Lome + EPL) sur la face avant du linteau,
-    // tournee vers le joueur lors de l'intro.
+    // Panneau "Universite de Lome / Ecole Polytechnique de Lome" en haut de la tour.
     const plateTex = makeLogoPlate(logoFull, 2048, 460, { bg: '#fbfaf6', pad: 0.05 });
-    const logoMat = applyBend(new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.7, emissive: '#ffffff', emissiveMap: plateTex, emissiveIntensity: 0.04 }));
-    const logo = new THREE.Mesh(new THREE.PlaneGeometry(span + 1.2, (span + 1.2) * 460 / 2048), logoMat);
-    logo.position.set(0, 7.1, gateZ - 0.56);
+    const logoMat = applyBend(new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.7, emissive: '#ffffff', emissiveMap: plateTex, emissiveIntensity: 0.05 }));
+    const pw = tw - 1.0;
+    const logo = new THREE.Mesh(new THREE.PlaneGeometry(pw, pw * 460 / 2048), logoMat);
+    logo.position.set(0, th - 1.3, FRONT - 0.27);
     logo.rotation.y = Math.PI;
     this.group.add(logo);
-    // Et cote route, vu pendant la fuite (regard en arriere impossible, mais
-    // visible dans le rendu de fin de partie).
-    const logoBack = logo.clone();
-    logoBack.position.z = gateZ + 0.56;
-    logoBack.rotation.y = 0;
-    this.group.add(logoBack);
-
-    // Grand logo EPL sur le batiment central.
-    const wmTex = makeLogoPlate(wordmark, 1024, 440, { bg: '#fbfaf6', pad: 0.06 });
-    const wmMat = applyBend(new THREE.MeshStandardMaterial({ map: wmTex, roughness: 0.7, emissive: '#ffffff', emissiveMap: wmTex, emissiveIntensity: 0.06 }));
-    const wm = new THREE.Mesh(new THREE.PlaneGeometry(12, 12 * 440 / 1024), wmMat);
-    wm.position.set(0, 12.6, cz - 6.1);
-    wm.rotation.y = Math.PI;
-    this.group.add(wm);
-
-    // Drapeaux EPL flottants.
-    const flagTex = makeLogoPlate(wordmark, 512, 320, { bg: '#f7f5ef', pad: 0.1, stripes: true });
-    const flagMat = new THREE.MeshStandardMaterial({ map: flagTex, side: THREE.DoubleSide, roughness: 0.8 });
-    const flagU = { uTime: { value: 0 } };
-    flagMat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = flagU.uTime;
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;')
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-          float fx = (position.x + 1.1) / 2.2;
-          transformed.z += sin(fx * 6.0 - uTime * 5.0) * 0.18 * fx;
-          transformed.y += sin(fx * 4.0 - uTime * 3.0) * 0.05 * fx;`);
-    };
-    applyBend(flagMat);
-    this.flagTime = flagU.uTime;
-    const poleMat = applyBend(new THREE.MeshStandardMaterial({ color: '#d1d5db', metalness: 0.9, roughness: 0.3 }));
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < 3; i++) {
-        const x = side * (SIDEWALK_OUT + 2 + i * 2.2);
-        const z = gateZ - 2.5;
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 9, 10), poleMat);
-        pole.position.set(x, 4.5, z);
-        pole.castShadow = true;
-        this.group.add(pole);
-        const fg = new THREE.PlaneGeometry(2.2, 1.4, 16, 4);
-        fg.translate(1.1, 0, 0);
-        const flag = new THREE.Mesh(fg, flagMat);
-        flag.position.set(x, 8.2, z);
-        flag.rotation.y = side > 0 ? Math.PI : 0;
-        flag.castShadow = true;
-        this.group.add(flag);
-      }
-    }
+    // Petit panneau bleu au fond du passage.
+    const small = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), applyBend(new THREE.MeshStandardMaterial({ color: EPL_TEAL, roughness: 0.5 })));
+    small.position.set(0, 2.9, FRONT + tdepth - 0.2);
+    small.rotation.y = Math.PI;
+    this.group.add(small);
   }
 
-  private flagTime: { value: number };
-
-  update(dt: number, dz: number) {
-    this.flagTime.value += dt;
+  update(_dt: number, dz: number) {
     this.group.position.z += dz;
-    this.group.visible = this.group.position.z < 140;
+    this.group.visible = this.group.position.z < 160;
   }
 
   reset() {

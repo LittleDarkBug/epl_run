@@ -4,7 +4,10 @@ import { applyBend } from '../render/curve';
 import { makeLogoPlate, makeSignTexture } from '../render/textures';
 import { Rng, pick, range } from '../core/rng';
 import { WORLD } from '../config';
-import { addBush, addCurb, addLamp, addPalm, ROAD_HALF, SIDEWALK_OUT, SIDEWALK_Y } from './Scenery';
+import {
+  addBush, addCampusCurb, addCar, addEplWing, addMoto, addPalm, addShadeTree, addSlimLamp, addSpeedSign,
+  CAR_COLORS, ROAD_HALF, SIDEWALK_OUT,
+} from './Scenery';
 
 // Zones scolaires : couloir de batiment (interieur) et cour de l'universite.
 
@@ -12,8 +15,8 @@ const L = WORLD.blockLength;
 export const CORRIDOR_HALF = 4.6;
 export const CORRIDOR_CEIL = 5.0;
 
-const WALL = '#efe6d2';
-const WAINSCOT = '#1d4f9e';
+const WALL = '#efdca6';
+const WAINSCOT = '#2f7fb8';
 const TRIM = '#f7f3ea';
 
 export interface ZoneImages {
@@ -25,7 +28,7 @@ let decalCache: {
   poster: THREE.Material;
   sign: THREE.Material[];
   arch: THREE.Material;
-  amphi: THREE.Material;
+  amphi: THREE.Material[];
 } | null = null;
 
 function decals(img: ZoneImages) {
@@ -39,7 +42,12 @@ function decals(img: ZoneImages) {
       m(makeSignTexture(['BÂTIMENT C', 'GÉNIE ÉLECTRIQUE'], '#1446a0', '#ffffff', 1024, 300, '#f5d10d'), 0.3),
     ],
     arch: m(makeLogoPlate(img.logoFull, 2048, 460, { bg: '#fbfaf6', pad: 0.05 }), 0.06),
-    amphi: m(makeSignTexture(['AMPHI 600'], '#f7f3ea', '#1446a0', 1024, 220, '#e41f26'), 0.1),
+    amphi: [
+      m(makeSignTexture(['AMPHI 20'], '#f7f3ea', '#1446a0', 1024, 220, '#e41f26'), 0.1),
+      m(makeSignTexture(['GRAND AMPHI FDS'], '#f7f3ea', '#1446a0', 1024, 220, '#e41f26'), 0.1),
+      m(makeSignTexture(['UNIPOD'], '#1446a0', '#ffffff', 1024, 220, '#f5d10d'), 0.2),
+      m(makeSignTexture(['AMERICAN CORNER'], '#f7f3ea', '#b91c1c', 1024, 220, '#1d4ed8'), 0.1),
+    ],
   };
   return decalCache;
 }
@@ -106,9 +114,9 @@ export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages): { ge
     b.add(UNIT.box, mat(xl, (1.1 + H) / 2, z, 0, 0, 0, 0.34, H - 1.1, 0.5), WALL, { r: 0.9 });
   }
   for (let z = z0 - bay / 2; z > z1; z -= bay) {
-    // Claustra : lames horizontales fines typiques des ecoles.
-    for (let k = 0; k < 3; k++) b.add(UNIT.box, mat(xl, 1.6 + k * 0.95, z, 0, 0, 0, 0.06, 0.05, bay - 0.5), '#9aa3ad', { r: 0.4, m: 0.6 });
-    b.add(UNIT.box, mat(xl, (1.1 + H - 0.8) / 2, z, 0, 0, 0, 0.04, H - 1.9, 0.04), '#9aa3ad', { r: 0.4, m: 0.6 });
+    // Barreaux metalliques comme sur les batiments de l'EPL.
+    for (let k = 0; k < 11; k++) b.add(UNIT.box, mat(xl, (1.1 + H - 0.8) / 2, z - (bay - 0.5) / 2 + (k + 0.5) * ((bay - 0.5) / 11), 0, 0, 0, 0.03, H - 1.9, 0.03), '#3b3f45', { r: 0.4, m: 0.7 });
+    for (const yy of [2.2, 3.3]) b.add(UNIT.box, mat(xl, yy, z, 0, 0, 0, 0.04, 0.04, bay - 0.5), '#3b3f45', { r: 0.4, m: 0.7 });
   }
   // Exterieur visible par les fenetres.
   b.add(UNIT.box, mat(-W - 6, 0.08, 0, 0, 0, 0, 11, 0.16, L), '#5f8f3a', { r: 1 });
@@ -213,88 +221,76 @@ function flamboyant(b: GeoBuilder, x: number, z: number, r: Rng) {
   }
 }
 
-function uniBuilding(b: GeoBuilder, side: number, z: number, len: number, r: Rng) {
-  const x0 = side * 15;
-  const floors = 2 + Math.floor(r() * 2);
-  const H = floors * 3.6 + 0.6;
-  const depth = 12;
-  const xc = x0 + side * depth / 2;
-  b.add(UNIT.box, mat(xc, H / 2, z, 0, 0, 0, depth, H, len), '#f4f1ea', { r: 0.85 });
-  b.add(UNIT.box, mat(xc, H + 0.25, z, 0, 0, 0, depth + 0.6, 0.5, len + 0.4), '#1446a0', { r: 0.5, m: 0.2 });
-  // Galeries a arcades.
-  const face = x0 - side * 1.6;
-  b.add(UNIT.box, mat(x0 - side * 0.8, 3.6, z, 0, 0, 0, 1.6, 0.35, len), '#f4f1ea', { r: 0.85 });
-  for (let k = 0; k <= Math.floor(len / 3); k++) {
-    b.add(UNIT.box, mat(face, 1.8, z + len / 2 - k * 3, 0, 0, 0, 0.4, 3.6, 0.4), '#f4f1ea', { r: 0.85 });
-  }
-  for (let f = 0; f < floors; f++) {
-    for (let k = 0; k < Math.floor(len / 2.4); k++) {
-      const lit = r() < 0.3;
-      b.add(UNIT.box, mat(x0 - side * 0.02, 1.9 + f * 3.6, z + len / 2 - 1.2 - k * 2.4, 0, 0, 0, 0.06, 1.7, 1.5), lit ? '#ffc98a' : '#2d4460', lit ? { e: 1.1 } : { r: 0.06, m: 0.5 });
-    }
-    b.add(UNIT.box, mat(x0 - side * 0.1, 0.9 + f * 3.6 + 3.6, z, 0, 0, 0, 0.2, 0.12, len), '#e41f26', { r: 0.5 });
-  }
-}
-
 export function buildCourt(r: Rng, part: CourtPart, img: ZoneImages): { geo: THREE.BufferGeometry; extras: THREE.Object3D[] } {
   const b = new GeoBuilder();
   const extras: THREE.Object3D[] = [];
   const D = decals(img);
   const z0 = L / 2, z1 = -L / 2;
+  const tallSides: number[] = [];
   for (const side of [-1, 1]) {
-    addCurb(b, side, z0, z1);
-    // Pelouse et haie basse.
-    b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 9), 0.1, 0, 0, 0, 0, 18, 0.2, L), '#5f9a3a', { r: 1 });
-    for (let z = z0 - 1; z > z1; z -= 2) b.add(UNIT.rbox, mat(side * (SIDEWALK_OUT + 0.4), 0.5, z - 0.5, 0, 0, 0, 0.7, 0.7, 1.9), '#2f6b2c', { r: 0.9 });
-    // Allee transversale en beton.
-    b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 6), 0.22, z0 - 10, 0, 0, 0, 12, 0.04, 2.4), '#d6d0c4', { r: 0.9 });
-    // Arbres et palmiers.
-    flamboyant(b, side * (SIDEWALK_OUT + range(r, 3, 5)), z0 - range(r, 4, 12), r);
-    if (r() < 0.8) flamboyant(b, side * (SIDEWALK_OUT + range(r, 3, 6)), z0 - range(r, 22, 32), r);
-    addPalm(b, side * (SIDEWALK_OUT + 1.6), 0.2, z0 - range(r, 14, 20), range(r, 7, 9), r);
-    // Bancs.
-    for (let k = 0; k < 2; k++) {
-      const bz = z0 - range(r, 3, L - 3);
-      const bx = side * (ROAD_HALF + 2.2);
-      b.add(UNIT.box, mat(bx, SIDEWALK_Y + 0.45, bz, 0, 0, 0, 0.5, 0.08, 1.8), '#8d6e63', { r: 0.8 });
-      b.add(UNIT.box, mat(bx + side * 0.22, SIDEWALK_Y + 0.75, bz, 0, 0, 0, 0.06, 0.5, 1.8), '#8d6e63', { r: 0.8 });
-      for (const dz of [-0.75, 0.75]) b.add(UNIT.box, mat(bx, SIDEWALK_Y + 0.22, bz + dz, 0, 0, 0, 0.45, 0.44, 0.08), '#1446a0', { r: 0.4, m: 0.5 });
+    addCampusCurb(b, side, z0, z1);
+    // Accotement en laterite puis herbe seche.
+    b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 3), 0.1, 0, 0, 0, 0, 6, 0.2, L), '#b0603a', { r: 1 });
+    b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 14), 0.09, 0, 0, 0, 0, 16, 0.18, L), '#8d9a4a', { r: 1 });
+    // Arbres d'ombrage, quelques flamboyants et palmiers.
+    addShadeTree(b, side * (SIDEWALK_OUT + range(r, 1.5, 4)), 0.2, z0 - range(r, 3, 12), r, range(r, 0.9, 1.2));
+    if (r() < 0.8) addShadeTree(b, side * (SIDEWALK_OUT + range(r, 2, 5)), 0.2, z0 - range(r, 20, 32), r, range(r, 0.8, 1.1));
+    if (r() < 0.4) flamboyant(b, side * (SIDEWALK_OUT + range(r, 8, 11)), z0 - range(r, 10, 26), r);
+    if (r() < 0.3) addPalm(b, side * (SIDEWALK_OUT + 1.2), 0.2, z0 - range(r, 14, 20), range(r, 7, 9), r);
+    // Voitures et motos garees sur la laterite.
+    const nCars = Math.floor(r() * 3);
+    for (let k = 0; k < nCars; k++) {
+      const cz = z0 - range(r, 4, L - 4);
+      addCar(b, new THREE.Matrix4().makeTranslation(side * (SIDEWALK_OUT + 2.8), 0.2, cz).multiply(new THREE.Matrix4().makeRotationY(range(r, -0.15, 0.15))), pick(r, CAR_COLORS));
     }
-    uniBuilding(b, side, 0, L - 4, r);
+    if (r() < 0.5) {
+      const mz = z0 - range(r, 5, L - 10);
+      for (let k = 0; k < 6; k++) {
+        addMoto(b, new THREE.Matrix4().makeTranslation(side * (SIDEWALK_OUT + 1.6), 0.2, mz - k * 0.95).multiply(new THREE.Matrix4().makeRotationY(side * 1.35)),
+          pick(r, ['#1e1e1e', '#b91c1c', '#1d4ed8', '#6b7280']), r() < 0.3);
+      }
+    }
+    // Batiment jaune de l'universite, facade tournee vers la route.
+    const xf = side * (SIDEWALK_OUT + 10);
+    const len = L - 6;
+    if (r() < 0.8) {
+      const base = side > 0
+        ? new THREE.Matrix4().makeTranslation(xf, 0, z0 - 3).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2))
+        : new THREE.Matrix4().makeTranslation(xf, 0, z0 - 3 - len).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2));
+      const floors = r() < 0.3 ? 1 : 2;
+      addEplWing(b, base, len, r, floors);
+      if (floors === 2) tallSides.push(side);
+    }
   }
-  addLamp(b, -1, z0 - 6);
-  addLamp(b, 1, z0 - 24);
+  addSlimLamp(b, -1, z0 - 6);
+  addSlimLamp(b, 1, z0 - 24);
+  if (r() < 0.35) addSpeedSign(b, r() < 0.5 ? -1 : 1, z0 - range(r, 8, 28));
 
   // Preau couvert au-dessus de la route (jeu d'ombres).
-  if (part === 'body' && r() < 0.55) {
+  if (part === 'body' && r() < 0.4) {
     const pz = z0 - range(r, 8, 20);
     const pl = 10;
     for (const s of [-1, 1]) {
       for (let k = 0; k <= 3; k++) {
-        b.add(UNIT.cyl, mat(s * (ROAD_HALF + 0.9), 2.4, pz - k * (pl / 3), 0, 0, 0, 0.3, 4.8, 0.3), '#f4f1ea', { r: 0.8 });
+        b.add(UNIT.cyl, mat(s * (ROAD_HALF + 0.9), 2.4, pz - k * (pl / 3), 0, 0, 0, 0.3, 4.8, 0.3), '#d8d8d4', { r: 0.8 });
       }
     }
-    b.add(UNIT.box, mat(0, 4.9, pz - pl / 2, 0, 0, 0, (ROAD_HALF + 1.4) * 2, 0.25, pl + 0.6), '#1446a0', { r: 0.5, m: 0.2 });
-    for (let k = 0; k < 8; k++) b.add(UNIT.box, mat(0, 4.72, pz - 0.6 - k * (pl / 7.4), 0, 0, 0, (ROAD_HALF + 1.2) * 2, 0.12, 0.25), '#f4f1ea', { r: 0.8 });
+    b.add(UNIT.box, mat(0, 4.9, pz - pl / 2, 0, 0, 0, (ROAD_HALF + 1.4) * 2, 0.25, pl + 0.6), '#8f969e', { r: 0.45, m: 0.6 });
+    b.add(UNIT.box, mat(0, 4.72, pz - pl / 2, 0, 0, 0, (ROAD_HALF + 1.5) * 2, 0.2, pl + 0.8), '#e2bd57', { r: 0.8 });
   }
 
   if (part === 'in') {
-    // Arche d'entree de l'universite avec le logo complet.
-    const az = z0 - 2;
-    const span = (ROAD_HALF + 1.4) * 2;
-    for (const s of [-1, 1]) {
-      b.add(UNIT.box, mat(s * span / 2, 4.2, az, 0, 0, 0, 1.4, 8.4, 1.4), '#f4f1ea', { r: 0.8 });
-      b.add(UNIT.box, mat(s * span / 2, 4.2, az, 0, 0, 0, 1.5, 0.9, 1.5), '#1446a0', { r: 0.5 });
-      b.add(UNIT.box, mat(s * span / 2, 8.6, az, 0, 0, 0, 0.5, 0.5, 0.5), '#ffe3a8', { e: 4 });
-    }
-    b.add(UNIT.box, mat(0, 7.2, az, 0, 0, 0, span + 1.4, 1.8, 1.0), '#f4f1ea', { r: 0.8 });
-    b.add(UNIT.box, mat(0, 6.25, az, 0, 0, 0, span + 1.5, 0.16, 1.1), '#1446a0', { r: 0.5 });
-    extras.push(plane(D.arch, span + 1.0, (span + 1.0) * 460 / 2048, 0, 7.2, az + 0.52, 0));
-  } else if (r() < 0.5) {
-    // Amphitheatre en fond de pelouse.
-    const side = r() < 0.5 ? -1 : 1;
-    const ax = side * (SIDEWALK_OUT + 7.4);
-    extras.push(plane(D.amphi, 5, 1.07, ax - side * 0.1, 7.9 + 0.2, 0, side > 0 ? -Math.PI / 2 : Math.PI / 2));
+    // Grand panneau d'entree du campus sur deux poteaux, cote droit.
+    const sx = ROAD_HALF + 3.5;
+    const sz = z0 - 4;
+    for (const dx of [-2.6, 2.6]) b.add(UNIT.box, mat(sx + dx, 1.8, sz, 0, 0, 0, 0.25, 3.6, 0.25), '#9aa0a6', { r: 0.4, m: 0.7 });
+    b.add(UNIT.box, mat(sx, 3.9, sz - 0.08, 0, 0, 0, 6.2, 1.5, 0.12), '#1d2a44', { r: 0.5, m: 0.4 });
+    extras.push(plane(D.arch, 6.0, 6.0 * 460 / 2048, sx, 3.9, sz + 0.0, 0));
+  } else if (tallSides.length && r() < 0.7) {
+    // Enseigne d'amphi ou de batiment sur le toit.
+    const side = pick(r, tallSides);
+    const xf = side * (SIDEWALK_OUT + 10) - side * 0.3;
+    extras.push(plane(pick(r, D.amphi), 5, 1.07, xf, 7.9, -1, side > 0 ? -Math.PI / 2 : Math.PI / 2));
   }
   return { geo: b.build(), extras };
 }

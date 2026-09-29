@@ -133,10 +133,11 @@ export class UI {
   private zoneTimer = 0;
 
   zone(z: 'street' | 'corridor' | 'court') {
+    const pickOne = (a: string[]) => a[Math.floor(Math.random() * a.length)];
     const info = {
-      street: ['Zone', 'RUES DE LOMÉ'],
-      corridor: ['Intérieur', 'COULOIR DU BÂTIMENT B'],
-      court: ['Campus', 'COUR DE L\'UNIVERSITÉ'],
+      street: ['Quartier', pickOne(['RUES DE LOMÉ', 'BOULEVARD DU 13 JANVIER', 'VERS LE GRAND MARCHÉ'])],
+      corridor: ['Intérieur', pickOne(['BÂTIMENTS DE L\'EPL', 'COULOIR DES TP', 'AILE GÉNIE CIVIL'])],
+      court: ['Campus de l\'UL', pickOne(['PELOUSE CENTRALE', 'VERS L\'AMPHI 20', 'GRAND AMPHI FDS', 'DEVANT L\'UNIPOD'])],
     }[z];
     $('zone-sub').textContent = info[0];
     $('zone-name').textContent = info[1];

@@ -406,3 +406,136 @@ export function addStreetBits(b: GeoBuilder, side: number, z: number, r: Rng) {
     b.add(UNIT.box, mat(x, SIDEWALK_Y + 1.0, z - 0.55, 0, 0, 0, 0.7, 0.04, 0.04), '#999', { r: 0.3, m: 0.9 });
   }
 }
+
+// ---------------- Elements inspires du vrai campus de l'UL / EPL ----------------
+
+export const EPL_YELLOW = '#e2bd57';
+export const EPL_YELLOW_D = '#c9a444';
+export const EPL_GREYBLUE = '#aeb9c8';
+export const EPL_TEAL = '#2f8fc7';
+
+// Applique une matrice de base a chaque ajout (repere local).
+function local(b: GeoBuilder, base: THREE.Matrix4) {
+  return (g: THREE.BufferGeometry, m: THREE.Matrix4, c: THREE.ColorRepresentation, p = {}) => b.add(g, base.clone().multiply(m), c, p);
+}
+
+// Aile de batiment de l'EPL : deux niveaux, poteaux clairs, fenetres a
+// barreaux, auvents jaunes inclines. Repere local : facade le long de +x
+// (de 0 a len), tournee vers -z, profondeur vers +z.
+export function addEplWing(b: GeoBuilder, base: THREE.Matrix4, len: number, r: Rng, floors = 2) {
+  const add = local(b, base);
+  const fh = 3.6;
+  const depth = 11;
+  const H = floors * fh;
+  add(UNIT.box, mat(len / 2, H / 2, depth / 2, 0, 0, 0, len, H, depth), EPL_YELLOW, { r: 0.9 });
+  // Toiture en tole.
+  add(UNIT.box, mat(len / 2, H + 0.25, depth / 2, 0, 0, 0, len + 0.8, 0.3, depth + 1.6), '#8f969e', { r: 0.45, m: 0.6 });
+  add(UNIT.box, mat(len / 2, H + 0.05, -0.1, 0, 0, 0, len + 0.8, 0.35, 0.3), EPL_YELLOW_D, { r: 0.8 });
+  const bay = 4;
+  const nb = Math.max(1, Math.round(len / bay));
+  const bw = len / nb;
+  for (let f = 0; f < floors; f++) {
+    const y0 = f * fh;
+    // Bandeau de plancher.
+    add(UNIT.box, mat(len / 2, y0 + 0.5, -0.12, 0, 0, 0, len, 1.0, 0.24), EPL_YELLOW, { r: 0.85 });
+    for (let i = 0; i < nb; i++) {
+      const x0 = i * bw;
+      // Ouverture a barreaux avec interieur sombre ou bache bleue.
+      const inside = r() < 0.35 ? '#2553a8' : '#252c36';
+      add(UNIT.box, mat(x0 + bw / 2, y0 + 2.05, 0.05, 0, 0, 0, bw - 0.4, 2.1, 0.05), inside, { r: 0.7 });
+      const nbar = Math.floor((bw - 0.4) / 0.22);
+      for (let k = 1; k < nbar; k++) {
+        add(UNIT.box, mat(x0 + 0.2 + k * ((bw - 0.4) / nbar), y0 + 2.05, -0.08, 0, 0, 0, 0.03, 2.1, 0.03), '#3b3f45', { r: 0.4, m: 0.7 });
+      }
+      for (const yy of [y0 + 1.05, y0 + 2.05, y0 + 3.08]) add(UNIT.box, mat(x0 + bw / 2, yy, -0.08, 0, 0, 0, bw - 0.4, 0.04, 0.04), '#3b3f45', { r: 0.4, m: 0.7 });
+      // Auvent jaune incline au-dessus de chaque travee.
+      add(UNIT.box, mat(x0 + bw / 2, y0 + 3.35, -0.55, -0.42, 0, 0, bw - 0.1, 0.07, 1.25), EPL_YELLOW, { r: 0.75 });
+      add(UNIT.box, mat(x0 + bw / 2, y0 + 3.1, -1.12, 0, 0, 0, bw - 0.1, 0.12, 0.05), EPL_YELLOW_D, { r: 0.75 });
+    }
+    // Poteaux clairs.
+    for (let i = 0; i <= nb; i++) add(UNIT.box, mat(i * bw, y0 + fh / 2, -0.2, 0, 0, 0, 0.36, fh, 0.36), '#d8d8d4', { r: 0.8 });
+  }
+  // Rives bleues aux extremites.
+  for (const x of [0.1, len - 0.1]) add(UNIT.box, mat(x, H / 2, -0.25, 0, 0, 0, 0.25, H, 0.2), EPL_TEAL, { r: 0.6 });
+}
+
+// Grand arbre d'ombrage (neem, cailcedrat) au houppier large et irregulier.
+export function addShadeTree(b: GeoBuilder, x: number, y: number, z: number, r: Rng, scale = 1) {
+  const h = range(r, 4, 6) * scale;
+  const lean = range(r, -0.12, 0.12);
+  b.add(UNIT.cylLow, mat(x, y + h / 2, z, 0, 0, lean, 0.55 * scale, h, 0.55 * scale), '#6b4a36', { r: 0.95 });
+  const top = new THREE.Vector3(x - Math.sin(lean) * h, y + h, z);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + r();
+    b.add(UNIT.cylLow, mat(top.x + Math.cos(a) * 0.9 * scale, top.y + 0.7 * scale, top.z + Math.sin(a) * 0.9 * scale, Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7, 0.22 * scale, 2.2 * scale, 0.22 * scale), '#5e4230', { r: 0.95 });
+  }
+  const greens = ['#2f5e27', '#3b6f2c', '#467d31', '#2a5423', '#55883a'];
+  const n = 22;
+  for (let i = 0; i < n; i++) {
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 3.6 * scale;
+    const s = range(r, 1.3, 2.3) * scale;
+    b.add(UNIT.sphereLow, mat(top.x + Math.cos(a) * d, top.y + 1.6 * scale + range(r, -0.6, 1.2) * scale - d * 0.15, top.z + Math.sin(a) * d, r(), r(), 0, s, s * 0.75, s), pick(r, greens), { r: 0.85 });
+  }
+}
+
+// Voiture garee (vue de l'arriere dans le sens de la course).
+export function addCar(b: GeoBuilder, base: THREE.Matrix4, color: string) {
+  const add = local(b, base);
+  const glass = '#1b2430';
+  add(UNIT.rboxSoft, mat(0, 0.72, 0, 0, 0, 0, 1.8, 0.72, 4.3), color, { r: 0.22, m: 0.55 });
+  add(UNIT.rboxSoft, mat(0, 1.28, 0.1, 0, 0, 0, 1.56, 0.62, 2.3), color, { r: 0.22, m: 0.55 });
+  add(UNIT.box, mat(0, 1.3, 0.1, 0, 0, 0, 1.6, 0.44, 2.0), glass, { r: 0.05, m: 0.6 });
+  add(UNIT.box, mat(0, 1.25, 1.2, -0.5, 0, 0, 1.4, 0.5, 0.05), glass, { r: 0.05, m: 0.6 });
+  for (const s of [-1, 1]) {
+    add(UNIT.box, mat(s * 0.7, 0.88, 2.14, 0, 0, 0, 0.34, 0.16, 0.04), '#ff2a2a', { e: 2.5, r: 0.3 });
+    add(UNIT.box, mat(s * 0.7, 0.86, -2.14, 0, 0, 0, 0.34, 0.14, 0.04), '#fff4d6', { e: 1.5, r: 0.3 });
+    for (const zz of [-1.35, 1.35]) {
+      add(UNIT.cyl, mat(s * 0.82, 0.36, zz, 0, 0, Math.PI / 2, 0.7, 0.24, 0.7), '#141414', { r: 0.8 });
+      add(UNIT.cyl, mat(s * 0.9, 0.36, zz, 0, 0, Math.PI / 2, 0.38, 0.1, 0.38), '#b8bec6', { r: 0.3, m: 0.9 });
+    }
+  }
+  add(UNIT.box, mat(0, 0.66, 2.16, 0, 0, 0, 0.55, 0.14, 0.03), '#f5f5f0', { r: 0.5 });
+  add(UNIT.box, mat(0, 0.42, 2.12, 0, 0, 0, 1.82, 0.2, 0.14), '#2b2f36', { r: 0.5 });
+}
+
+export const CAR_COLORS = ['#b9bec4', '#f2f2ef', '#1e3a8a', '#1b1d22', '#8a8f96', '#a61e22', '#3c4450'];
+
+// Moto (zemidjan) garee, orientation libre.
+export function addMoto(b: GeoBuilder, base: THREE.Matrix4, color: string, withHelmet = false) {
+  const add = local(b, base);
+  for (const dz of [-0.62, 0.62]) add(UNIT.torus, mat(0, 0.33, dz, 0, Math.PI / 2, 0, 0.55, 0.55, 0.7), '#161616', { r: 0.7 });
+  add(UNIT.rbox, mat(0, 0.6, 0, 0, 0, 0, 0.3, 0.35, 1.0), color, { r: 0.3, m: 0.4 });
+  add(UNIT.rbox, mat(0, 0.82, 0.15, 0, 0, 0, 0.3, 0.12, 0.7), '#222', { r: 0.6 });
+  add(UNIT.box, mat(0, 1.0, -0.55, 0, 0, 0, 0.7, 0.04, 0.04), '#999', { r: 0.3, m: 0.9 });
+  if (withHelmet) add(UNIT.sphere, mat(0.2, 1.08, -0.5, 0, 0, 0, 0.3, 0.28, 0.3), '#c81e1e', { r: 0.3 });
+}
+
+// Bordure de campus : blocs rouges et blancs espaces.
+export function addCampusCurb(b: GeoBuilder, side: number, z0: number, z1: number) {
+  const x = side * (ROAD_HALF + 0.2);
+  let i = 0;
+  for (let z = z0 - 0.3; z > z1 + 0.6; z -= 1.9, i++) {
+    b.add(UNIT.rbox, mat(x, SIDEWALK_Y + 0.12, z - 0.6, 0, 0, 0, 0.42, 0.26, 1.2), i % 2 ? '#c8323a' : '#f1efe9', { r: 0.8 });
+  }
+}
+
+// Lampadaire blanc fin du campus.
+export function addSlimLamp(b: GeoBuilder, side: number, z: number) {
+  const x = side * (ROAD_HALF + 1.2);
+  b.add(UNIT.cylLow, mat(x, SIDEWALK_Y + 3.6, z, 0, 0, 0, 0.12, 7.2, 0.12), '#eef0f2', { r: 0.4, m: 0.3 });
+  b.add(UNIT.box, mat(x - side * 0.35, SIDEWALK_Y + 7.15, z, 0, 0, 0, 0.8, 0.12, 0.3), '#eef0f2', { r: 0.4, m: 0.3 });
+  b.add(UNIT.box, mat(x - side * 0.5, SIDEWALK_Y + 7.07, z, 0, 0, 0, 0.45, 0.04, 0.22), '#fff1d0', { e: 4, r: 0.3 });
+}
+
+// Panneau de limitation a 30.
+export function addSpeedSign(b: GeoBuilder, side: number, z: number) {
+  const x = side * (ROAD_HALF + 0.9);
+  b.add(UNIT.cylLow, mat(x, SIDEWALK_Y + 1.2, z, 0, 0, 0, 0.07, 2.4, 0.07), '#9aa0a6', { r: 0.4, m: 0.7 });
+  b.add(UNIT.cyl, mat(x, SIDEWALK_Y + 2.6, z, Math.PI / 2, 0, 0, 0.8, 0.04, 0.8), '#d7262e', { r: 0.5 });
+  b.add(UNIT.cyl, mat(x, SIDEWALK_Y + 2.6, z + 0.025, Math.PI / 2, 0, 0, 0.6, 0.02, 0.6), '#f8f8f5', { r: 0.5 });
+  // "30" en blocs.
+  const dz = z + 0.04;
+  const px = (dx: number, dy: number, w: number, h: number) => b.add(UNIT.box, mat(x + dx, SIDEWALK_Y + 2.6 + dy, dz, 0, 0, 0, w, h, 0.01), '#111', { r: 0.6 });
+  px(-0.1, 0.12, 0.14, 0.035); px(-0.1, 0, 0.14, 0.035); px(-0.1, -0.12, 0.14, 0.035); px(-0.04, 0.06, 0.035, 0.12); px(-0.04, -0.06, 0.035, 0.12);
+  px(0.1, 0.12, 0.13, 0.035); px(0.1, -0.12, 0.13, 0.035); px(0.05, 0, 0.035, 0.26); px(0.16, 0, 0.035, 0.26);
+}
