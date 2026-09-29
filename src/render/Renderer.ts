@@ -50,8 +50,9 @@ export class Renderer {
     this.renderer = renderer;
 
     const deviceDpr = Math.min(window.devicePixelRatio || 1, 3);
-    this.maxDpr = this.tier === 'high' ? Math.min(deviceDpr, 2) : this.tier === 'medium' ? Math.min(deviceDpr, 1.85) : Math.min(deviceDpr, 1.6);
-    this.minDpr = Math.min(this.maxDpr, this.tier === 'low' ? 1.1 : 1.25);
+    // Priorite a la finesse de l'image, quitte a couter un peu de performances.
+    this.maxDpr = Math.min(deviceDpr, this.tier === 'low' ? 1.8 : 2);
+    this.minDpr = Math.min(this.maxDpr, this.tier === 'low' ? 1.25 : 1.4);
     this.dpr = this.maxDpr;
     renderer.setPixelRatio(this.dpr);
 
@@ -87,7 +88,7 @@ export class Renderer {
   }
 
   get shadowMapSize(): number {
-    return this.tier === 'low' ? 1536 : 2048;
+    return this.tier === 'high' ? 4096 : 2048;
   }
 
   setCamera(camera: THREE.PerspectiveCamera) {

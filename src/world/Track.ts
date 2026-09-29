@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createObstacle, ObstacleType, SPECS, VARIANTS } from './ObstacleMeshes';
 import { applyBend } from '../render/curve';
-import { BUS_HEIGHT, LANE_WIDTH, PLAYER, WORLD, laneX } from '../config';
+import { LANE_WIDTH, PLAYER, WORLD, laneX } from '../config';
 import { clamp, pick } from '../core/rng';
 import { zoneAt, Zone } from './World';
 import { GeoBuilder, mat, UNIT } from '../render/GeoBuilder';
@@ -10,7 +10,8 @@ import { GeoBuilder, mat, UNIT } from '../render/GeoBuilder';
 // Coordonnee de piste s : distance depuis le depart. z monde = dist - s.
 
 export type PowerUpType = 'magnet' | 'sneakers' | 'double';
-export type BonusType = PowerUpType | 'diploma';
+export type DossierPiece = 'stamp' | 'copy' | 'signature';
+export type BonusType = PowerUpType | 'diploma' | DossierPiece;
 
 interface Obstacle {
   type: ObstacleType;
@@ -56,11 +57,14 @@ export type HitResult = { kind: 'none' } | { kind: 'crash'; type: ObstacleType }
 
 const MAX_COINS = 260;
 
-interface ZoneSet { low: ObstacleType[]; high: ObstacleType[]; full: ObstacleType[]; bus: boolean; moto: boolean }
+// Obstacles coherents avec chaque lieu : la rue de Lome (vehicules, chantier,
+// kiosques), les couloirs (mobilier scolaire), le campus (estrade de remise
+// des diplomes, voitures garees, chaises d'amphi).
+interface ZoneSet { low: ObstacleType[]; high: ObstacleType[]; full: ObstacleType[]; stage: boolean; moto: boolean }
 const ZONE_SET: Record<Zone, ZoneSet> = {
-  street: { low: ['barrier', 'barrier', 'bench'], high: ['gate'], full: ['kiosk', 'car'], bus: true, moto: true },
-  corridor: { low: ['books', 'books', 'bench'], high: ['gate'], full: ['board'], bus: false, moto: false },
-  court: { low: ['bench', 'barrier', 'books'], high: ['gate'], full: ['car', 'car', 'kiosk'], bus: true, moto: true },
+  street: { low: ['barrier', 'barrier', 'bench'], high: ['gate'], full: ['kiosk', 'car', 'bus'], stage: false, moto: true },
+  corridor: { low: ['books', 'chairs', 'bench'], high: ['gate'], full: ['board', 'copier'], stage: false, moto: false },
+  court: { low: ['bench', 'chairs', 'books', 'barrier'], high: ['gate'], full: ['car', 'kiosk', 'copier'], stage: true, moto: false },
 };
 
 // Couleurs des cahiers : bandes du logo EPL.
@@ -84,6 +88,8 @@ export class Track {
   private fullUntil = [0, 0, 0];
   private lastPowerS = 0;
   private time = 0;
+  // Piece du dossier que le joueur doit encore trouver (fixee par le jeu).
+  dossierNeed: DossierPiece | null = null;
   onCoin: ((x: number, y: number, z: number) => void) | null = null;
   onPowerUp: ((t: BonusType, x: number, y: number, z: number) => void) | null = null;
 
@@ -122,7 +128,7 @@ export class Track {
     for (let i = 0; i < MAX_COINS; i++) this.coinMesh.setColorAt(i, NOTEBOOK_COLORS[0]);
 
     // Pre-remplissage des pools pour eviter les saccades en jeu.
-    const warm: [ObstacleType, number][] = [['barrier', 6], ['bench', 4], ['gate', 3], ['kiosk', 4], ['bus', 4], ['ramp', 3], ['moto', 2], ['books', 4], ['board', 3], ['car', 7]];
+    const warm: [ObstacleType, number][] = [['barrier', 6], ['bench', 4], ['gate', 3], ['kiosk', 4], ['bus', 4], ['moto', 2], ['books', 4], ['board', 3], ['car', 7], ['steps', 2], ['stage', 2], ['copier', 3], ['chairs', 3]];
     for (const [t, n] of warm) {
       for (let v = 0; v < VARIANTS[t]; v++) {
         const key = `${t}:${v}`;
@@ -132,7 +138,7 @@ export class Track {
         this.pools.set(key, arr);
       }
     }
-    for (const t of ['magnet', 'sneakers', 'double', 'diploma'] as BonusType[]) {
+    for (const t of ['magnet', 'sneakers', 'double', 'diploma', 'stamp', 'copy', 'signature'] as BonusType[]) {
       this.puPools.set(t, [createPowerUp(t), createPowerUp(t)]);
     }
   }
@@ -205,41 +211,22 @@ export class Track {
 
     if (free.length === 0) return 6;
 
-    // Bus et rampes.
-    if (r < 0.26 && free.length >= 2 && Z.bus && zoneEnd.bus) {
-      const nBus = Math.random() < 0.35 + d * 0.3 ? 2 : 1;
-      const busLanes = shuffle(free.slice()).slice(0, Math.min(nBus, free.length - (free.length === 3 ? 0 : 1)));
-      const withRamp = busLanes[Math.floor(Math.random() * busLanes.length)];
-      let len = 0;
-      for (const l of busLanes) {
-        const ramp = l === withRamp;
-        if (ramp) {
-          this.add('ramp', l, s);
-          this.add('bus', l, s + SPECS.ramp.len);
-          // Pieces sur la rampe puis sur le toit.
-          this.coinLine(l, s + 1, 5, 1.3, (i) => 1 + (i / 4) * BUS_HEIGHT);
-          this.coinLine(l, s + SPECS.ramp.len + 1, 7, 1.4, () => BUS_HEIGHT + 1);
-          len = Math.max(len, SPECS.ramp.len + SPECS.bus.len);
-          if (Math.random() < 0.3) this.placeBonus('diploma', l, s + SPECS.ramp.len + SPECS.bus.len - 1.2, BUS_HEIGHT + 1.2);
-          // Deuxieme bus en enfilade parfois.
-          if (Math.random() < 0.4 + d * 0.3) {
-            this.add('bus', l, s + SPECS.ramp.len + SPECS.bus.len + 0.6);
-            this.coinLine(l, s + SPECS.ramp.len + SPECS.bus.len + 1.5, 6, 1.4, () => BUS_HEIGHT + 1);
-            len = Math.max(len, SPECS.ramp.len + SPECS.bus.len * 2 + 0.6);
-          }
-        } else {
-          const off = Math.random() * 6;
-          this.add('bus', l, s + off);
-          len = Math.max(len, off + SPECS.bus.len);
-        }
+    // Estrade de remise des diplomes : on monte les marches (ou on saute
+    // directement dessus) et on court sur la scene.
+    if (r < 0.2 && Z.stage && zoneEnd.stage && free.length >= 2) {
+      const l = pick(Math.random, free);
+      const sl = SPECS.steps.len, gl = SPECS.stage.len, h = SPECS.stage.top!;
+      this.add('steps', l, s);
+      this.add('stage', l, s + sl);
+      this.coinLine(l, s + 0.3, 3, 0.6, (i) => 1 + ((i + 1) / 3) * h);
+      this.coinLine(l, s + sl + 1, 7, 1.4, () => h + 1);
+      if (Math.random() < 0.45) this.placeBonus('diploma', l, s + sl + gl - 1.5, h + 1.3);
+      const rest = free.filter((x) => x !== l);
+      for (const x of rest) {
+        if (Math.random() < 0.55 + d * 0.3) this.add(pick(Math.random, hop), x, s + 3 + Math.random() * 5);
+        else this.coinLine(x, s, 8, 2.2, () => 1);
       }
-      // Voie restante : obstacles franchissables.
-      const rest = free.filter((l) => !busLanes.includes(l));
-      for (const l of rest) {
-        if (Math.random() < 0.5 + d * 0.3) this.add(pick(Math.random, hop), l, s + 4 + Math.random() * 4);
-        else this.coinLine(l, s, 8, 2.2, () => 1);
-      }
-      return len;
+      return sl + gl;
     }
 
     // Moto-taxi en contresens.
@@ -303,11 +290,13 @@ export class Track {
   }
 
   private maybePowerUp(s: number) {
-    if (s - this.lastPowerS < 320 + Math.random() * 260) return;
+    if (s - this.lastPowerS < 240 + Math.random() * 200) return;
     const lanes = [-1, 0, 1].filter((l) => this.laneFree(l, s) && !this.obstacles.some((o) => o.lane === l && Math.abs(o.s - s) < 8));
     if (!lanes.length) return;
     this.lastPowerS = s;
-    const type = pick(Math.random, ['magnet', 'sneakers', 'double', 'diploma'] as BonusType[]);
+    const type: BonusType = this.dossierNeed && Math.random() < 0.5
+      ? this.dossierNeed
+      : pick(Math.random, ['magnet', 'sneakers', 'double', 'diploma'] as BonusType[]);
     this.placeBonus(type, pick(Math.random, lanes), s, 1.2);
   }
 
@@ -495,7 +484,7 @@ export class Track {
   }
 }
 
-const BONUS_COLOR: Record<BonusType, string> = { magnet: '#ff3355', sneakers: '#18e0c8', double: '#b36bff', diploma: '#ffc629' };
+const BONUS_COLOR: Record<BonusType, string> = { magnet: '#ff3355', sneakers: '#18e0c8', double: '#b36bff', diploma: '#ffc629', stamp: '#ff5a2c', copy: '#f5f5f0', signature: '#3d8bff' };
 
 function shuffle<T>(a: T[]): T[] {
   for (let i = a.length - 1; i > 0; i--) {
@@ -556,6 +545,57 @@ function createPowerUp(type: BonusType): THREE.Object3D {
       icon.add(wing);
     }
     icon.rotation.y = Math.PI / 2;
+  } else if (type === 'stamp') {
+    // Tampon encreur : manche en bois, semelle, encre rouge.
+    const wood = applyBend(new THREE.MeshStandardMaterial({ color: '#8b5a2b', roughness: 0.6 }));
+    const base = applyBend(new THREE.MeshStandardMaterial({ color: '#2b2f36', roughness: 0.4, metalness: 0.5 }));
+    const ink = applyBend(new THREE.MeshStandardMaterial({ color: '#d61f2c', roughness: 0.5, emissive: '#d61f2c', emissiveIntensity: 0.4 }));
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), wood);
+    knob.position.y = 0.28;
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.3, 12), wood);
+    handle.position.y = 0.08;
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.28), base);
+    plate.position.y = -0.12;
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, 0.26), ink);
+    pad.position.y = -0.19;
+    icon.add(knob, handle, plate, pad);
+  } else if (type === 'copy' || type === 'signature') {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 340;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#fbf8ee';
+    ctx.fillRect(0, 0, 256, 340);
+    ctx.fillStyle = '#9aa3b5';
+    for (let i = 0; i < 12; i++) ctx.fillRect(28, 60 + i * 18, 150 + ((i * 37) % 50), 5);
+    ctx.fillStyle = '#1446a0';
+    ctx.font = '22px "Archivo Black", sans-serif';
+    ctx.textAlign = 'center';
+    if (type === 'copy') {
+      ctx.fillText('COPIE', 128, 34);
+      ctx.strokeStyle = '#1446a0';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(170, 280, 44, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = '14px "Archivo Black", sans-serif';
+      ctx.fillText('CERTIFIÉE', 170, 276);
+      ctx.fillText('CONFORME', 170, 294);
+    } else {
+      ctx.fillText('SIGNATURE', 128, 34);
+      ctx.strokeStyle = '#1d3fbf';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(40, 290);
+      for (let i = 0; i < 9; i++) ctx.quadraticCurveTo(60 + i * 20, 240 + (i % 2) * 70, 70 + i * 20, 280 - (i % 3) * 12);
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const m = applyBend(new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.8, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.35 }));
+    const sheet = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.82), m);
+    sheet.rotation.z = 0.12;
+    icon.add(sheet);
   } else if (type === 'diploma') {
     // Diplome roule avec ruban rouge et sceau dore.
     const paper = applyBend(new THREE.MeshStandardMaterial({ color: '#fff6dc', roughness: 0.7, emissive: '#fff1c4', emissiveIntensity: 0.35 }));

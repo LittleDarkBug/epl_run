@@ -147,6 +147,12 @@ export class UI {
     this.zoneTimer = window.setTimeout(() => el.classList.remove('show'), 2400);
   }
 
+  dossier(have: Set<string>, shield: boolean) {
+    const el = $('dossier');
+    for (const p of ['stamp', 'copy', 'signature']) el.querySelector(`[data-p="${p}"]`)!.classList.toggle('got', have.has(p) || shield);
+    el.classList.toggle('shield', shield);
+  }
+
   setDanger(on: boolean) {
     this.danger.classList.toggle('on', on);
   }

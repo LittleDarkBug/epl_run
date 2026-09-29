@@ -4,7 +4,7 @@ import { createSky, createSkyline, PALETTE, SUN_DIR } from '../render/Sky';
 import { makeBlobShadow, makeCapeTexture, makeLogoPlate, makeSoftSprite } from '../render/textures';
 import { World } from '../world/World';
 import { Campus } from '../world/Campus';
-import { Track, PowerUpType } from '../world/Track';
+import { Track, PowerUpType, DossierPiece } from '../world/Track';
 import { zoneAt, Zone } from '../world/World';
 import { CORRIDOR_CEIL } from '../world/Zones';
 import { Particles } from '../world/Particles';
@@ -110,6 +110,9 @@ export class Game {
   private totalCoins = 0;
   private runTime = 0;
   private diplomas = 0;
+  // Dossier administratif : tampon, photocopie legalisee, signature du chef.
+  private dossier = new Set<DossierPiece>();
+  private shield = false;
   private zone: Zone = 'street';
 
   // Camera.
@@ -333,6 +336,10 @@ export class Game {
         this.ui.flashWhite(0.3);
         return;
       }
+      if (t === 'stamp' || t === 'copy' || t === 'signature') {
+        this.collectPiece(t, x, y, z);
+        return;
+      }
       this.timers[t] = POWERUP_TIME[t];
       this.audio.powerUp();
       const colors: Record<PowerUpType, number[]> = { magnet: [1, 0.2, 0.35], sneakers: [0.1, 0.9, 0.8], double: [0.7, 0.4, 1] };
@@ -341,6 +348,51 @@ export class Game {
       this.ui.flashWhite(0.25);
       if (t === 'sneakers') this.player.setSuperSneakers(true);
     };
+  }
+
+  private static readonly PIECES: DossierPiece[] = ['stamp', 'copy', 'signature'];
+
+  private refreshDossier() {
+    this.track.dossierNeed = this.shield ? null : Game.PIECES.find((p) => !this.dossier.has(p)) ?? null;
+    this.ui.dossier(this.dossier, this.shield);
+  }
+
+  private collectPiece(p: DossierPiece, x: number, y: number, z: number) {
+    this.dossier.add(p);
+    this.audio.stamp();
+    this.particles.sparkle(x, y, z, [1, 0.85, 0.4], 30);
+    const names: Record<DossierPiece, string> = { stamp: 'TAMPON', copy: 'COPIE LÉGALISÉE', signature: 'SIGNATURE DU CHEF' };
+    if (this.dossier.size >= 3) {
+      // Dossier complet : protection contre une collision, le Gardien recule.
+      this.dossier.clear();
+      this.shield = true;
+      this.warn = 0;
+      const pts = 500 * this.multiplier();
+      this.score += pts;
+      this.audio.powerUp();
+      this.ui.flashWhite(0.45);
+      this.ui.toast(`DOSSIER COMPLET ! +${pts}`, false, 1600);
+    } else {
+      this.ui.toast(`${names[p]} (${this.dossier.size}/3)`);
+    }
+    this.refreshDossier();
+  }
+
+  // Le dossier complet absorbe une collision. Retourne vrai s'il a servi.
+  private useShield(): boolean {
+    if (!this.shield) return false;
+    this.shield = false;
+    this.warn = 0;
+    this.shake = 0.35;
+    this.hitStop = 0.1;
+    this.renderer.hit(1.2);
+    this.audio.stumble();
+    this.player.play('stumble');
+    this.particles.sparkle(this.x, this.y + 1, 0, [1, 0.85, 0.4], 40);
+    this.ui.flashWhite(0.35);
+    this.ui.toast('LE DOSSIER T\'A SAUVÉ !', false, 1400);
+    this.refreshDossier();
+    return true;
   }
 
   // ---------- Etats ----------
@@ -366,6 +418,8 @@ export class Game {
     this.shake = 0;
     this.runTime = 0;
     this.diplomas = 0;
+    this.dossier.clear();
+    this.shield = false;
     this.zone = 'street';
     this.tutorialStep = 0;
     this.world.reset(this.dist);
@@ -382,6 +436,7 @@ export class Game {
     this.chaser.root.rotation.set(0, 0, 0);
     this.ui.resetHud();
     this.ui.hud(0, 0, 1, false);
+    this.refreshDossier();
   }
 
   private enterMenu() {
@@ -732,6 +787,7 @@ export class Game {
     this.chaser.root.visible = this.chaserDist < 4.7;
     this.chaser.update(dt, this.speed);
 
+    if (this.shield && Math.random() < 0.5) this.particles.trail(this.x + (Math.random() - 0.5) * 0.8, this.y + 0.3 + Math.random() * 1.4, 0, [1, 0.8, 0.3]);
     if (this.timers.sneakers > 0 && this.grounded) this.particles.trail(this.x, this.y + 0.08, 0.2, [0.1, 0.9, 0.8]);
     if (this.timers.magnet > 0 && Math.random() < 0.4) this.particles.trail(this.x + (Math.random() - 0.5), this.y + 1 + Math.random(), 0, [1, 0.25, 0.35]);
   }
@@ -746,6 +802,7 @@ export class Game {
     this.audio.stumble();
     this.particles.impact(this.x, this.y, 0, 12);
     if (this.warn > 0) {
+      if (this.useShield()) return;
       this.caught('Deux faux pas, le Gardien t\'a rattrapé.');
       return;
     }
@@ -756,13 +813,20 @@ export class Game {
   }
 
   private onCrash(type: string) {
+    if (this.useShield()) return;
     const reasons: Record<string, string> = {
+      books: 'Tu t\'es étalé dans une pile de livres.',
+      board: 'Le tableau noir t\'a arrêté. Leçon retenue.',
+      car: 'Tu as percuté une voiture garée.',
+      steps: 'Raté, la marche de l\'estrade.',
+      stage: 'Tu as foncé dans l\'estrade des diplômes.',
+      copier: 'La photocopieuse a gagné.',
+      chairs: 'Les chaises d\'amphi ont eu raison de toi.',
       barrier: 'Tu as percuté une barrière de chantier.',
       bench: 'Tu as trébuché sur une table-banc.',
       gate: 'La banderole des examens t\'a arrêté net.',
       kiosk: 'Tu as foncé dans un kiosque.',
       bus: 'Tu as embrassé l\'arrière d\'un minibus.',
-      ramp: 'Mauvaise prise sur la rampe.',
       moto: 'Le zemidjan ne t\'a pas vu venir.',
     };
     this.audio.crash();

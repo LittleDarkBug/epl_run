@@ -28,8 +28,9 @@ Commandes : glisser le doigt à gauche ou à droite pour changer de voie, vers l
 
 - Cinématique d'ouverture : le cauchemar administratif (guichets, tampons, réveil du Gardien), rejouable depuis le menu.
 - Trois zones qui s'enchaînent : rues de Lomé, couloirs des bâtiments de l'EPL, routes du campus de l'UL (Pelouse centrale, Amphi 20, Grand Amphi FDS, UniPod).
-- Obstacles : barrières de chantier, tables-bancs, piles de livres, tableaux noirs mobiles, voitures garées (on peut sauter dessus), banderoles d'examens, kiosques, minibus (avec rampes pour courir sur les toits), zemidjans à contresens.
-- À ramasser : cahiers aux couleurs du logo EPL, diplômes (gros bonus), aimant, super baskets, bonne note x2.
+- Obstacles propres à chaque lieu : dans les rues de Lomé, barrières de chantier, kiosques, voitures et minibus garés, zemidjans à contresens ; dans les couloirs, piles de livres, tables-bancs, chaises d'amphi, tableaux noirs et photocopieuses sur roulettes ; sur le campus, voitures garées et estrade de remise des diplômes sur laquelle on peut monter et courir. Partout, les banderoles d'examens obligent à glisser dessous.
+- Dossier administratif : le tampon, la copie légalisée et la signature du chef apparaissent au fil de la course. Les trois réunis rapportent un gros bonus et protègent d'une collision (le Gardien recule).
+- À ramasser : cahiers aux couleurs du logo EPL, diplômes (gros bonus, surtout sur les estrades), aimant, super baskets, bonne note x2.
 - Personnages riggés et animés par capture de mouvement : Afi, l'étudiante en fuite, et le Gardien de l'EPL, androïde bleu en toque de diplômé avec le logo EPL sur le torse et sur la cape. Deux faux pas rapprochés et il t'attrape, puis il fête ça en dansant la samba.
 
 ## Technique

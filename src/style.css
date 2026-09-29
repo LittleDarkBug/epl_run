@@ -620,3 +620,23 @@ html, body {
 .steps strong { color: var(--yellow); }
 .inline-ico { width: 20px; height: 20px; vertical-align: -4px; stroke: #fff; fill: none; }
 #ios-install { z-index: 10; }
+
+/* Dossier administratif (3 pieces = protection) */
+.dossier {
+  position: absolute;
+  top: calc(68px + var(--safe-top));
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  background: var(--glass);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.d-label { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: #c9d4f5; }
+.dossier i { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.08); transition: background 0.3s, transform 0.3s; }
+.dossier svg { width: 17px; height: 17px; fill: rgba(255, 255, 255, 0.35); stroke: rgba(255, 255, 255, 0.35); }
+.dossier i.got { background: var(--yellow); transform: scale(1.08); }
+.dossier i.got svg { fill: #0a0f1f; stroke: #0a0f1f; }
+.dossier.shield { border-color: var(--yellow); box-shadow: 0 0 18px rgba(245, 209, 13, 0.55); animation: pop 0.7s ease-in-out infinite alternate; }

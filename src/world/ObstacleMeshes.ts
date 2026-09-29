@@ -9,7 +9,7 @@ import { addCar, CAR_COLORS } from './Scenery';
 // Fabriques des obstacles. Chaque type est une geometrie fusionnee (1 appel
 // de rendu) avec quelques variantes de couleur.
 
-export type ObstacleType = 'barrier' | 'bench' | 'gate' | 'kiosk' | 'bus' | 'ramp' | 'moto' | 'books' | 'board' | 'car';
+export type ObstacleType = 'barrier' | 'bench' | 'gate' | 'kiosk' | 'bus' | 'moto' | 'books' | 'board' | 'car' | 'steps' | 'stage' | 'copier' | 'chairs';
 
 export interface ObstacleSpec {
   len: number; // profondeur en z
@@ -22,17 +22,23 @@ export interface ObstacleSpec {
   high?: boolean; // se franchit en glissant
 }
 
+export const STAGE_H = 1.15;
+
 export const SPECS: Record<ObstacleType, ObstacleSpec> = {
   barrier: { len: 0.5, halfW: 1.05, y0: 0, y1: 1.15, low: true },
   bench: { len: 1.3, halfW: 1.0, y0: 0, y1: 1.05, low: true },
   gate: { len: 0.4, halfW: 1.15, y0: 1.2, y1: 3.6, high: true },
   kiosk: { len: 2.4, halfW: 1.05, y0: 0, y1: 2.7, top: 2.7 },
   bus: { len: 10.5, halfW: 1.12, y0: 0, y1: BUS_HEIGHT, top: BUS_HEIGHT },
-  ramp: { len: 6.5, halfW: 1.12, y0: 0, y1: BUS_HEIGHT, ramp: true, top: BUS_HEIGHT },
   moto: { len: 1.9, halfW: 0.55, y0: 0, y1: 1.5, low: true },
   books: { len: 0.9, halfW: 1.05, y0: 0, y1: 1.1, low: true },
   board: { len: 0.7, halfW: 1.1, y0: 0, y1: 2.6, top: 2.6 },
   car: { len: 4.3, halfW: 0.95, y0: 0, y1: 1.55, top: 1.55 },
+  // Estrade de remise des diplomes : marches puis scene praticable.
+  steps: { len: 1.8, halfW: 1.2, y0: 0, y1: STAGE_H, ramp: true, top: STAGE_H },
+  stage: { len: 11, halfW: 1.2, y0: 0, y1: STAGE_H, top: STAGE_H },
+  copier: { len: 1.1, halfW: 0.8, y0: 0, y1: 1.45, top: 1.45 },
+  chairs: { len: 0.8, halfW: 1.0, y0: 0, y1: 1.1, low: true },
 };
 
 const uber = createUberMaterial({ grime: 0.12 });
@@ -183,28 +189,80 @@ function bus(variant: number): THREE.Object3D {
   return meshFrom(b);
 }
 
-// Rampe en planches pour monter sur les bus.
-function ramp(): THREE.Object3D {
+// Estrade : marches recouvertes de moquette et nez de marche dores.
+function steps(): THREE.Object3D {
   const b = new GeoBuilder();
-  const len = SPECS.ramp.len, H = BUS_HEIGHT, W = 2.2;
-  const ang = Math.atan2(H, len);
-  const hyp = Math.hypot(H, len);
-  const planks = 14;
-  for (let i = 0; i < planks; i++) {
-    const t = (i + 0.5) / planks;
-    const z = len / 2 - t * len;
-    const y = t * H;
-    b.add(UNIT.box, mat(0, y - 0.04, z, ang, 0, 0, W, 0.08, hyp / planks * 0.94), i % 2 ? '#b07845' : '#9c6a3c', { r: 0.85 });
+  const n = 4, len = SPECS.steps.len, H = STAGE_H, W = 2.4;
+  for (let i = 0; i < n; i++) {
+    const h = ((i + 1) / n) * H;
+    const z = len / 2 - (i + 0.5) * (len / n);
+    b.add(UNIT.box, mat(0, h / 2, z, 0, 0, 0, W, h, len / n), '#8a1c24', { r: 0.95 });
+    b.add(UNIT.box, mat(0, h + 0.01, z + len / n / 2 - 0.03, 0, 0, 0, W, 0.03, 0.06), '#d8b24a', { r: 0.3, m: 0.9 });
   }
+  return meshFrom(b);
+}
+
+// Scene de remise des diplomes : plancher, jupe, banderole, pupitre, plantes.
+function stage(variant: number): THREE.Object3D {
+  const g = new THREE.Group();
+  const b = new GeoBuilder();
+  const len = SPECS.stage.len, H = STAGE_H, W = 2.4;
+  b.add(UNIT.box, mat(0, H - 0.04, 0, 0, 0, 0, W, 0.08, len), '#6b4a2e', { r: 0.6 });
+  b.add(UNIT.box, mat(0, (H - 0.08) / 2, 0, 0, 0, 0, W - 0.04, H - 0.08, len - 0.04), '#1446a0', { r: 0.8 });
+  // Jupe plissee aux couleurs de l'EPL.
+  for (let k = 0; k < 22; k++) {
+    const z = len / 2 - (k + 0.5) * (len / 22);
+    for (const s of [-1, 1]) b.add(UNIT.box, mat(s * (W / 2 + 0.01), (H - 0.1) / 2, z, 0, 0, 0, 0.02, H - 0.12, len / 22 - 0.05), k % 2 ? '#1446a0' : '#f5d10d', { r: 0.9 });
+  }
+  b.add(UNIT.box, mat(0, H - 0.1, len / 2 + 0.01, 0, 0, 0, W, 0.2, 0.02), '#f5d10d', { r: 0.5 });
+  // Pupitre et plantes en pot au bout de la scene.
+  const zEnd = -len / 2 + 0.8;
+  b.add(UNIT.rbox, mat(variant % 2 ? -0.7 : 0.7, H + 0.55, zEnd, 0, 0, 0, 0.6, 1.1, 0.45), '#5a3a22', { r: 0.6 });
   for (const s of [-1, 1]) {
-    b.add(UNIT.box, mat(s * (W / 2 - 0.05), H / 2 - 0.1, 0, ang, 0, 0, 0.14, 0.2, hyp), '#6b4423', { r: 0.9 });
-    // Bord raye de securite.
-    b.add(UNIT.box, mat(s * (W / 2 + 0.02), H / 2 - 0.02, 0, ang, 0, 0, 0.04, 0.08, hyp), '#facc15', { r: 0.5, e: 0.3 });
+    b.add(UNIT.cyl, mat(s * 0.95, H + 0.2, zEnd - 0.2, 0, 0, 0, 0.3, 0.4, 0.3), '#c8c2b6', { r: 0.7 });
+    for (let k = 0; k < 6; k++) b.add(UNIT.sphereLow, mat(s * 0.95 + Math.cos(k) * 0.12, H + 0.55 + (k % 3) * 0.12, zEnd - 0.2 + Math.sin(k) * 0.12, 0, 0, 0, 0.3, 0.35, 0.3), '#3d7a2a', { r: 0.85 });
   }
-  for (let i = 1; i < 4; i++) {
-    const t = i / 4;
-    const z = len / 2 - t * len;
-    for (const s of [-1, 1]) b.add(UNIT.box, mat(s * (W / 2 - 0.15), (t * H) / 2, z, 0, 0, 0, 0.12, t * H, 0.12), '#5b3a1e', { r: 0.9 });
+  g.add(meshFrom(b));
+  // Banderole suspendue a l'arriere de la scene.
+  const tex = makeBannerTexture('DIPLÔMES 2026', '#1446a0', '#ffffff', '#f5d10d');
+  const bm = applyBend(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8, side: THREE.DoubleSide }));
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 0.96), bm);
+  banner.position.set(0, H + 2.4, -len / 2 + 0.1);
+  banner.castShadow = true;
+  g.add(banner);
+  const pb = new GeoBuilder();
+  for (const s of [-1, 1]) pb.add(UNIT.cyl, mat(s * 1.15, H + 1.45, -len / 2 + 0.1, 0, 0, 0, 0.06, 2.9, 0.06), '#c9ccd1', { r: 0.3, m: 0.85 });
+  g.add(meshFrom(pb));
+  return g;
+}
+
+// Photocopieuse sur roulettes, bac plein de feuilles.
+function copier(variant: number): THREE.Object3D {
+  const b = new GeoBuilder();
+  const body = variant % 2 ? '#e7e5df' : '#d9dde2';
+  b.add(UNIT.rbox, mat(0, 0.75, 0, 0, 0, 0, 1.3, 1.2, 0.95), body, { r: 0.5 });
+  b.add(UNIT.rbox, mat(0, 1.4, -0.05, 0, 0, 0, 1.25, 0.12, 0.85), '#3a3f46', { r: 0.4, m: 0.3 });
+  b.add(UNIT.box, mat(0.35, 1.36, 0.45, 0, 0, 0, 0.4, 0.06, 0.1), '#2b7de9', { e: 1.5, r: 0.3 });
+  b.add(UNIT.box, mat(-0.3, 1.02, 0.49, 0, 0, 0, 0.5, 0.25, 0.04), '#a9b0b8', { r: 0.4 });
+  for (let k = 0; k < 3; k++) b.add(UNIT.box, mat(0, 0.35 + k * 0.28, 0.48, 0, 0, 0, 1.1, 0.02, 0.02), '#9aa0a6', { r: 0.5 });
+  // Feuilles qui depassent et s'envolent.
+  for (let k = 0; k < 5; k++) b.add(UNIT.box, mat(-0.55 - k * 0.04, 1.2 + k * 0.03, 0.1 * k - 0.2, 0.1 * k, 0, -0.3 - k * 0.1, 0.02, 0.3, 0.21), '#fbfaf5', { r: 0.9 });
+  for (const s of [-1, 1]) for (const z of [-0.35, 0.35]) b.add(UNIT.cyl, mat(s * 0.55, 0.07, z, 0, 0, Math.PI / 2, 0.14, 0.06, 0.14), '#111', { r: 0.7 });
+  return meshFrom(b);
+}
+
+// Pile de chaises d'amphi : a sauter.
+function chairs(variant: number): THREE.Object3D {
+  const b = new GeoBuilder();
+  const seat = variant % 2 ? '#1d4ed8' : '#b91c1c';
+  for (const px of [-0.55, 0.55]) {
+    for (let k = 0; k < 5; k++) {
+      const y = 0.45 + k * 0.13;
+      const rot = (k % 2 ? 0.06 : -0.04) + px * 0.05;
+      b.add(UNIT.rbox, mat(px, y, 0, 0, rot, 0, 0.5, 0.05, 0.48), seat, { r: 0.55 });
+      b.add(UNIT.rbox, mat(px, y + 0.3, 0.24, -0.15, rot, 0, 0.5, 0.45, 0.04), seat, { r: 0.55 });
+    }
+    for (const dx of [-0.22, 0.22]) for (const dz of [-0.2, 0.2]) b.add(UNIT.box, mat(px + dx, 0.22, dz, 0, 0, 0, 0.03, 0.45, 0.03), '#9aa0a6', { r: 0.3, m: 0.9 });
   }
   return meshFrom(b);
 }
@@ -307,7 +365,10 @@ export function createObstacle(type: ObstacleType, variant: number): THREE.Objec
     }
     case 'kiosk': return kiosk(variant);
     case 'bus': return bus(variant);
-    case 'ramp': return ramp();
+    case 'steps': return steps();
+    case 'stage': return stage(variant);
+    case 'copier': return copier(variant);
+    case 'chairs': return chairs(variant);
     case 'moto': return moto(variant);
     case 'books': return books(variant);
     case 'board': return board(variant);
@@ -320,5 +381,5 @@ export function createObstacle(type: ObstacleType, variant: number): THREE.Objec
 }
 
 export const VARIANTS: Record<ObstacleType, number> = {
-  barrier: 2, bench: 2, gate: BANNERS.length, kiosk: 4, bus: 4, ramp: 1, moto: 3, books: 3, board: 4, car: 7,
+  barrier: 2, bench: 2, gate: BANNERS.length, kiosk: 4, bus: 4, moto: 3, books: 3, board: 4, car: 7, steps: 1, stage: 2, copier: 2, chairs: 2,
 };
