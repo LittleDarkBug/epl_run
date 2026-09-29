@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1b45" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="description" content="EPL Run : fuis le Gardien de l'École Polytechnique de Lomé dans les rues de Lomé." />
+    <title>EPL Run</title>
+    <link rel="icon" href="./textures/epl_mark.png" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="danger"></div>
+    <div id="flash"></div>
+
+    <div id="ui">
+      <!-- Chargement -->
+      <section id="loading" class="screen active">
+        <div class="brand">
+          <div class="brand-title"><span class="b-epl">EPL</span><span class="b-run">RUN</span></div>
+          <div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="progress"><div id="progress-fill"></div></div>
+        <p class="loading-text">Préparation de la course...</p>
+      </section>
+
+      <!-- Menu principal -->
+      <section id="menu" class="screen">
+        <div class="menu-top">
+          <div class="brand small">
+            <div class="brand-title"><span class="b-epl">EPL</span><span class="b-run">RUN</span></div>
+            <div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <p class="tagline">Le Gardien de l'EPL est à tes trousses.<br /><strong>Cours. Esquive. Ne te retourne pas.</strong></p>
+        </div>
+        <div class="menu-bottom">
+          <div class="stats-row">
+            <div class="stat"><span class="stat-label">Record</span><span class="stat-value" id="menu-best">0</span></div>
+            <div class="stat"><span class="stat-label">Cahiers</span><span class="stat-value coin-val" id="menu-coins">0</span></div>
+          </div>
+          <button id="play" class="btn primary big">JOUER</button>
+          <button id="story-btn" class="btn ghost small">REVOIR L'HISTOIRE</button>
+          <div class="swipe-hint">
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <path class="sh-arrow" d="M32 6l-6 7h12zM32 58l-6-7h12zM6 32l7-6v12zM58 32l-7-6v12z" />
+              <path class="sh-hand" d="M29 44V24a3 3 0 0 1 6 0v11l1-1a3 3 0 0 1 5 1l1-1a3 3 0 0 1 5 2v8c0 6-4 10-10 10h-2c-4 0-6-2-8-5l-5-7a3 3 0 0 1 5-3z" />
+            </svg>
+            <span>Glisse ton doigt pour esquiver,<br />sauter et passer dessous</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- HUD -->
+      <section id="hud" class="screen">
+        <button id="pause-btn" class="icon-btn" aria-label="Pause">
+          <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.2" /><rect x="14" y="5" width="4" height="14" rx="1.2" /></svg>
+        </button>
+        <div class="hud-right">
+          <div class="score-line"><span id="mult" class="mult">x1</span><span id="score" class="score">0</span></div>
+          <div class="coins-line"><span class="coin-icon"></span><span id="coins">0</span></div>
+        </div>
+        <div id="powerups" class="powerups"></div>
+        <div id="zone-banner" class="zone-banner"><small id="zone-sub"></small><strong id="zone-name"></strong></div>
+        <div id="toast" class="toast"></div>
+        <div id="tuto" class="tuto"></div>
+      </section>
+
+      <!-- Cinematique d'ouverture -->
+      <section id="story" class="screen">
+        <div class="letterbox top"></div>
+        <div class="letterbox bottom"></div>
+        <button id="skip" class="skip">PASSER</button>
+        <div id="doc" class="doc">
+          <div class="doc-head">RÉPUBLIQUE TOGOLAISE<br /><span>Travail, Liberté, Patrie</span></div>
+          <div class="doc-title">DEMANDE DE CERTIFICAT<br />DE SCOLARITÉ</div>
+          <div class="doc-ref">Réf. EPL/SCOL/2026/00000417-bis-ter</div>
+          <div class="doc-field"><span>Nom</span><i>YAO</i></div>
+          <div class="doc-field"><span>Filière</span><i>Génie Logiciel</i></div>
+          <div class="doc-field"><span>Pièces jointes</span><i>3 / 27</i></div>
+          <div class="doc-field"><span>Timbre fiscal</span><i></i></div>
+          <div class="doc-field"><span>Visa du chef</span><i></i></div>
+          <div id="stamps" class="stamps"></div>
+        </div>
+        <div class="caption">
+          <div id="speaker" class="speaker"></div>
+          <p id="line"></p>
+          <span class="next">Touche l'écran pour continuer</span>
+        </div>
+      </section>
+
+      <!-- Pause -->
+      <section id="pause" class="screen modal">
+        <div class="panel">
+          <h2>PAUSE</h2>
+          <button id="resume" class="btn primary">REPRENDRE</button>
+          <button id="quit" class="btn ghost">MENU</button>
+        </div>
+      </section>
+
+      <!-- Compte à rebours -->
+      <section id="countdown" class="screen"><div id="count-num">3</div></section>
+
+      <!-- Fin de partie -->
+      <section id="gameover" class="screen modal">
+        <div class="panel wide">
+          <div class="stamp">ATTRAPÉ !</div>
+          <p class="go-sub" id="go-sub">Le Gardien t'a ramené en amphi.</p>
+          <div id="record" class="record">NOUVEAU RECORD</div>
+          <div class="go-score" id="go-score">0</div>
+          <div class="go-grid">
+            <div><span class="stat-label">Distance</span><span class="stat-value" id="go-dist">0 m</span></div>
+            <div><span class="stat-label">Cahiers</span><span class="stat-value coin-val" id="go-coins">0</span></div>
+            <div><span class="stat-label">Record</span><span class="stat-value" id="go-best">0</span></div>
+          </div>
+          <button id="retry" class="btn primary big">REJOUER</button>
+          <button id="menu-btn" class="btn ghost">MENU</button>
+        </div>
+      </section>
+
+      <button id="mute" class="icon-btn mute" aria-label="Son">
+        <svg class="on" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke-width="2" stroke-linecap="round" /></svg>
+        <svg class="off" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke-width="2" stroke-linecap="round" /></svg>
+      </button>
+      <div id="rotate-hint">Tourne ton téléphone en mode portrait pour une meilleure expérience.</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
