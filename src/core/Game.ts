@@ -11,6 +11,7 @@ import { Particles } from '../world/Particles';
 import { Player } from '../actors/Player';
 import { Chaser } from '../actors/Chaser';
 import { rimUniform } from '../actors/materials';
+import type { Characters } from '../actors/characters';
 import { Input, Action } from './Input';
 import { Audio } from './Audio';
 import { UI } from '../ui/UI';
@@ -23,6 +24,7 @@ type State = 'loading' | 'menu' | 'story' | 'intro' | 'playing' | 'paused' | 'co
 interface Assets {
   logoFull: HTMLImageElement;
   wordmark: HTMLImageElement;
+  characters: Characters;
 }
 
 const store = {
@@ -140,6 +142,7 @@ export class Game {
         this.shake = 0.3;
       }
       if (b.speaker === 'LE GARDIEN DE L\'EPL') this.chaser.setAngry(1);
+      if (b.pose) this.player.play(b.pose);
     };
     this.ui.on('retry', () => this.restart(true));
     this.ui.on('menu-btn', () => this.restart(false));
@@ -232,11 +235,12 @@ export class Game {
 
   private setupActors(a: Assets) {
     const blob = makeBlobShadow();
-    this.player = new Player(blob);
+    const ch = a.characters;
+    this.player = new Player(ch.student, ch.playerClips, blob);
     this.scene.add(this.player.root, this.player.shadowMesh);
     const plate = makeLogoPlate(a.wordmark, 1024, 530, { bg: '#fbfaf6', pad: 0.07, stripes: true });
     const cape = makeCapeTexture(a.wordmark);
-    this.chaser = new Chaser(plate, cape, blob);
+    this.chaser = new Chaser(ch.guardian, ch.chaserClips, plate, cape, blob);
     this.scene.add(this.chaser.root);
     this.particles = new Particles(makeSoftSprite());
 
@@ -355,6 +359,7 @@ export class Game {
     this.chaser.setAngry(0);
     this.chaser.setDormant(false);
     this.chaser.play('idle');
+    this.player.play('idle');
     this.state = 'menu';
     this.beginRun();
   }
@@ -797,10 +802,10 @@ export class Game {
   private menuCamera(t: number) {
     const portrait = this.camera.aspect < 0.8;
     const ang = Math.PI - 0.42 + Math.sin(t * 0.25) * 0.08;
-    const r = portrait ? 7.2 : 6.0;
-    const h = 1.9 + Math.sin(t * 0.4) * 0.1;
+    const r = portrait ? 5.3 : 4.8;
+    const h = 1.55 + Math.sin(t * 0.4) * 0.08;
     const pos = new THREE.Vector3(Math.sin(ang) * r, h, Math.cos(ang) * r);
-    const look = new THREE.Vector3(portrait ? 0.4 : -0.6, portrait ? 1.35 : 1.9, 2.2);
+    const look = new THREE.Vector3(portrait ? 0.3 : -0.5, portrait ? 1.2 : 1.5, 2.2);
     return { pos, look };
   }
 

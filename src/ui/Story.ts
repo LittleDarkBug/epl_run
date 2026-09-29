@@ -10,17 +10,18 @@ export interface Beat {
   doc?: boolean;
   stamp?: { text: string; color: string; x: number; y: number; rot: number };
   wake?: boolean; // le Gardien s'eveille
+  pose?: 'idle' | 'sad' | 'no' | 'yes';
 }
 
 export const STORY: Beat[] = [
-  { shot: 'wide', speaker: '', text: 'Lomé, lundi, 7h58. Yao vient simplement récupérer son certificat de scolarité à l\'EPL.' },
-  { shot: 'doc', speaker: 'GUICHET N°1', text: 'Dossier incomplet. Il manque le tampon du guichet n°2.', doc: true, stamp: { text: 'INCOMPLET', color: '#d6182a', x: 18, y: 38, rot: -14 } },
+  { shot: 'wide', speaker: '', text: 'Lomé, lundi, 7h58. Afi vient simplement récupérer son certificat de scolarité à l\'EPL.' },
+  { shot: 'doc', pose: 'idle', speaker: 'GUICHET N°1', text: 'Dossier incomplet. Il manque le tampon du guichet n°2.', doc: true, stamp: { text: 'INCOMPLET', color: '#d6182a', x: 18, y: 38, rot: -14 } },
   { shot: 'doc', speaker: 'GUICHET N°2', text: 'Pour le tampon, il me faut une photocopie légalisée de la photocopie du guichet n°1.', doc: true, stamp: { text: 'PIÈCE MANQUANTE', color: '#1446a0', x: 30, y: 58, rot: 9 } },
-  { shot: 'doc', speaker: 'GUICHET N°3', text: 'Le chef de service doit signer. Il est en réunion. Depuis 2019.', doc: true, stamp: { text: 'REVENEZ DEMAIN', color: '#0b7a44', x: 8, y: 74, rot: -6 } },
-  { shot: 'hero', speaker: 'YAO', style: 'hero', text: 'Ça fait trois semaines que je « reviens demain » !', doc: true, stamp: { text: 'REJETÉ', color: '#d6182a', x: 40, y: 18, rot: 18 } },
+  { shot: 'doc', pose: 'sad', speaker: 'GUICHET N°3', text: 'Le chef de service doit signer. Il est en réunion. Depuis 2019.', doc: true, stamp: { text: 'REVENEZ DEMAIN', color: '#0b7a44', x: 8, y: 74, rot: -6 } },
+  { shot: 'hero', pose: 'no', speaker: 'AFI', style: 'hero', text: 'Ça fait trois semaines que je « reviens demain » !', doc: true, stamp: { text: 'REJETÉ', color: '#d6182a', x: 40, y: 18, rot: 18 } },
   { shot: 'chaser', speaker: 'SYSTÈME', style: 'robot', text: 'BIP. Réclamation non conforme détectée. Activation du Gardien de l\'EPL.', wake: true },
-  { shot: 'chaserLow', speaker: 'LE GARDIEN DE L\'EPL', style: 'robot', text: 'ÉTUDIANT YAO. RETOUR IMMÉDIAT EN AMPHI. FORMULAIRE B-12 EN SEPT EXEMPLAIRES.', wake: true },
-  { shot: 'hero', speaker: 'YAO', style: 'hero', text: 'Sept exemplaires ? Hors de question. Je me tire !', wake: true },
+  { shot: 'chaserLow', speaker: 'LE GARDIEN DE L\'EPL', style: 'robot', text: 'ÉTUDIANTE AFI. RETOUR IMMÉDIAT EN AMPHI. FORMULAIRE B-12 EN SEPT EXEMPLAIRES.', wake: true },
+  { shot: 'hero', pose: 'yes', speaker: 'AFI', style: 'hero', text: 'Sept exemplaires ? Hors de question. Je me tire !', wake: true },
 ];
 
 const $ = (id: string) => document.getElementById(id)!;

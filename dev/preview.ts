@@ -1,0 +1,49 @@
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { loadCharacters } from '../src/actors/characters';
+import { Player, PlayerAnim } from '../src/actors/Player';
+import { Chaser, ChaserAnim } from '../src/actors/Chaser';
+
+const q = new URLSearchParams(location.search);
+const canvas = document.getElementById('c') as HTMLCanvasElement;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#556');
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const sun = new THREE.DirectionalLight('#ffe0c0', 2.5);
+sun.position.set(3, 5, 4);
+scene.add(sun, new THREE.HemisphereLight('#aabbff', '#886655', 0.8));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#667' }));
+scene.add(ground);
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
+const ch = await loadCharacters('/');
+const tex = new THREE.Texture();
+const who = q.get('who') || 'player';
+const anim = q.get('a') || 'run';
+const t = Number(q.get('t') || 0.5);
+let obj: THREE.Object3D;
+if (who === 'player') {
+  const p = new Player(ch.student, ch.playerClips, tex);
+  p.play(anim as PlayerAnim);
+  const vy = Number(q.get('vy') || 5);
+  for (let i = 0; i < t * 30; i++) p.update(1 / 30, 20, 0, 0, vy, 0);
+  obj = p.root;
+} else {
+  const c = new Chaser(ch.guardian, ch.chaserClips, tex, tex, tex);
+  c.play(anim as ChaserAnim);
+  if (q.get('angry')) c.setAngry(1);
+  for (let i = 0; i < t * 30; i++) c.update(1 / 30, 20);
+  obj = c.root;
+}
+scene.add(obj);
+const side = q.get('v') || 'side';
+const h = who === 'player' ? 1.7 : 2.4;
+if (side === 'side') cam.position.set(5, h * 0.55, 0);
+else if (side === 'front') cam.position.set(0.5, h * 0.6, -5);
+else cam.position.set(0.5, h * 0.7, 5);
+cam.lookAt(0, h * 0.5, 0);
+renderer.render(scene, cam);
+(window as unknown as { done: boolean }).done = true;
