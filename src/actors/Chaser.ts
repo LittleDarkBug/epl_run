@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { charMat } from './materials';
 import { applyBend } from '../render/curve';
 import { damp } from '../core/rng';
-import { AX, AZ, attachToBone, boneWorldPos, rotateBone } from './rigUtil';
+import { AX, AY, AZ, attachToBone, boneWorldPos, rotateBone } from './rigUtil';
 
 // Le Gardien de l'EPL : androide humanoide modele dans Blender
 // (tools/blender/build_guardian.py) : visage humain sculpte, carrosserie
@@ -72,6 +72,7 @@ export class Chaser {
   private lastPhase = 0;
   private roarW = 0;
   private grabW = 0;
+  private throwT = -1;
   private angry = 0;
   private dormant = 0;
   private dormantTarget = 0;
@@ -236,6 +237,11 @@ export class Chaser {
     this.fade(base[anim], anim === 'victory' ? 0.4 : 0.25);
   }
 
+  // Geste de lancer (bras droit arme en arriere puis projete vers l'avant).
+  throwAnim() {
+    this.throwT = 0;
+  }
+
   setDormant(v: boolean) {
     this.dormantTarget = v ? 1 : 0;
     if (v) this.dormant = 1;
@@ -283,6 +289,19 @@ export class Chaser {
       rotateBone(B.mixamorigRightArm, r, AX, 1.25 * w - s * w);
       rotateBone(B.mixamorigLeftForeArm, r, AX, -0.9 * w);
       rotateBone(B.mixamorigRightForeArm, r, AX, -0.9 * w);
+    }
+
+    if (this.throwT >= 0) {
+      this.throwT += dt;
+      const u = this.throwT / 0.7;
+      if (u >= 1) this.throwT = -1;
+      else {
+        const ang = u < 0.45 ? -2.6 * (u / 0.45) : -2.6 + 3.9 * ((u - 0.45) / 0.55);
+        const w = Math.min(1, (1 - u) * 4);
+        rotateBone(B.mixamorigRightArm, r, AX, ang * w);
+        rotateBone(B.mixamorigRightForeArm, r, AX, -0.6 * w);
+        rotateBone(B.mixamorigSpine1, r, AY, (u < 0.45 ? 0.35 : -0.3) * w);
+      }
     }
 
     // Pompon.

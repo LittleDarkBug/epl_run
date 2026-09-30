@@ -498,6 +498,11 @@ export class Track {
     return { kind: 'none' };
   }
 
+  // Aucune obstacle dans la voie autour de s (a range metres pres).
+  laneClear(lane: number, s: number, range: number): boolean {
+    return !this.obstacles.some((o) => o.lane === lane && o.s - range < s && o.s + o.len + range > s);
+  }
+
   // Pour les indices visuels : distance du prochain obstacle dans la voie.
   nearestAhead(lane: number, dist: number): number {
     let best = Infinity;

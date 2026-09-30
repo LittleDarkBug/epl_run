@@ -33,6 +33,7 @@ import type { Characters } from '../actors/characters';
 import type { BakedAsset } from '../world/assets';
 import { Input, Action } from './Input';
 import { Audio } from './Audio';
+import { Projectiles } from '../world/Projectiles';
 import { Installer, canFullscreen, enterFullscreen, exitFullscreen, isFullscreen, isStandalone } from './Platform';
 import { UI } from '../ui/UI';
 import { StoryPlayer, Shot } from '../ui/Story';
@@ -140,6 +141,9 @@ export class Game {
   private path = new Path(Math.floor(Math.random() * 1e9));
   private segIdx = 0;
   private turnQueued = 0;
+  private projectiles!: Projectiles;
+  private projTimer = 0;
+  private projSeen = false;
   private laneDur: number = PLAYER.laneChangeTime;
   private pw = new THREE.Vector3();
   private yaw = 0;
@@ -356,6 +360,7 @@ export class Game {
     this.chaser = new Chaser(ch.guardian, ch.android, ch.chaserClips, plate, cape, blob);
     this.scene.add(this.chaser.root);
     this.particles = new Particles(makeSoftSprite());
+    this.setupProjectiles();
 
     this.player.onFootstep = () => {
       if (this.state === 'playing' || this.state === 'intro') {
@@ -372,6 +377,69 @@ export class Game {
         this.shake = Math.max(this.shake, 0.06 * vol);
       }
     };
+  }
+
+  // Tirs du Gardien : formulaires rejetes enflammes.
+  private setupProjectiles() {
+    const pr = this.projectiles = new Projectiles(this.path);
+    this.scene.add(pr.group);
+    pr.onLaunch = () => {
+      this.audio.projLaunch();
+      this.chaser.throwAnim();
+    };
+    pr.onTrail = (p) => {
+      this.particles.trail(p.x, p.y, p.z, [1, 0.25, 0.08]);
+      if (Math.random() < 0.5) this.particles.trail(p.x, p.y, p.z, [1, 0.6, 0.2]);
+    };
+    pr.onImpact = (p, s) => {
+      const near = clamp(1 - Math.abs(s - this.dist) / 25, 0, 1);
+      this.audio.projImpact(near);
+      this.particles.impact(p.x, 0, p.z, 22, true);
+      this.particles.sparkle(p.x, 0.4, p.z, [1, 0.35, 0.1], 30);
+      this.shake = Math.max(this.shake, 0.22 * near);
+    };
+  }
+
+  // Declenche un tir si la situation le permet (jamais pres d'un virage, ni
+  // quand les voies voisines sont bouchees).
+  private tryProjectile(): boolean {
+    const T = 1.7;
+    const st = this.dist + this.speed * T;
+    const seg = this.path.segs[this.segIdx];
+    if (st > seg.s1 - J - 14 || this.turnQueued) return false;
+    const lane = this.lane;
+    if (!this.track.laneClear(lane, st, 4)) return false;
+    const escape = [lane - 1, lane + 1].filter((l) => l >= -1 && l <= 1 && this.track.laneClear(l, st, 9));
+    if (!escape.length) return false;
+    this.projectiles.spawn(st, laneX(lane), T);
+    this.audio.projCharge();
+    this.audio.taunt();
+    if (!this.projSeen) {
+      this.projSeen = true;
+      this.ui.toast('ESQUIVE LES DOSSIERS REJETÉS !', true, 1800);
+    }
+    return true;
+  }
+
+  private updateProjectiles(dt: number) {
+    const pr = this.projectiles;
+    if (this.state === 'playing') {
+      this.projTimer -= dt;
+      if (this.projTimer <= 0 && this.dist > 350 && pr.active === 0) {
+        const d = clamp((this.dist - 350) / 3000, 0, 1);
+        this.projTimer = this.tryProjectile() ? 11 - 5 * d + Math.random() * 4 : 1.5;
+      }
+      if (pr.needsLaunch()) {
+        // Depart derriere le joueur, en hauteur (le Gardien lance depuis l'arriere).
+        pr.launchFrom(this.path.pos(Math.max(this.dist - Math.max(this.chaserDist, 9), this.path.segs[this.segIdx].s0 + 1), this.chaserX, new THREE.Vector3(), 3.4));
+      }
+    }
+    pr.update(dt);
+    if (this.state === 'playing' && pr.hits(this.dist, this.x, this.y)) {
+      this.particles.sparkle(this.pw.x, this.y + 1, this.pw.z, [1, 0.3, 0.1], 25);
+      this.ui.toast('DOSSIER REJETÉ !', true);
+      this.onStumble(this.x);
+    }
   }
 
   private bindTrackEvents() {
@@ -478,6 +546,8 @@ export class Game {
     this.diplomas = 0;
     this.dossier.clear();
     this.shield = false;
+    this.projectiles.clear();
+    this.projTimer = 6;
     this.zone = 'street';
     this.path.reset();
     this.segIdx = this.path.segIndexAt(this.dist);
@@ -746,6 +816,7 @@ export class Game {
     this.speed = SPEED.start + (SPEED.max - SPEED.start) * (1 - Math.exp(-this.dist / SPEED.rampDistance));
     this.audio.setSpeed((this.speed - SPEED.start) / (SPEED.max - SPEED.start));
     this.simulate(dt);
+    if (this.state === 'playing') this.updateProjectiles(dt);
     this.score += this.speed * dt * 0.5 * this.multiplier();
     for (const k of Object.keys(this.timers) as PowerUpType[]) {
       if (this.timers[k] > 0) {
@@ -1058,6 +1129,7 @@ export class Game {
     this.dist += this.speed * dt;
     this.track.update(dt, this.dist, 0);
     this.track.updateCoins(dt, this.dist, this.x, this.y, false, this.pw);
+    this.projectiles.update(dt);
     this.world.update(this.dist, this.pw.x, this.pw.z);
     const seg = this.path.segs[this.segIdx];
     let ground = this.track.groundAt(this.x, this.dist, this.y);
