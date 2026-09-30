@@ -13,6 +13,7 @@ import type { ChaserClips } from './Chaser';
 export interface Characters {
   student: GLTF;
   guardian: GLTF;
+  android: GLTF;
   playerClips: PlayerClips;
   chaserClips: ChaserClips;
 }
@@ -36,11 +37,16 @@ function inPlace(clip: THREE.AnimationClip, hips = 'mixamorigHips'): THREE.Anima
 export async function loadCharacters(base: string, onProgress?: (p: number) => void): Promise<Characters> {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
-  let a = 0, b = 0;
-  const report = () => onProgress?.((a + b) / 2);
-  const [student, guardian] = await Promise.all([
-    loader.loadAsync(`${base}models/student.glb`, (e) => { if (e.total) { a = e.loaded / e.total; report(); } }),
-    loader.loadAsync(`${base}models/guardian.glb`, (e) => { if (e.total) { b = e.loaded / e.total; report(); } }),
+  const prog = [0, 0, 0];
+  const track = (i: number) => (e: ProgressEvent) => {
+    if (!e.total) return;
+    prog[i] = e.loaded / e.total;
+    onProgress?.((prog[0] + prog[1] + prog[2]) / 3);
+  };
+  const [student, guardian, android] = await Promise.all([
+    loader.loadAsync(`${base}models/student.glb`, track(0)),
+    loader.loadAsync(`${base}models/guardian.glb`, track(1)),
+    loader.loadAsync(`${base}models/android.glb`, track(2)),
   ]);
 
   const get = (g: GLTF, n: string) => {
@@ -79,5 +85,5 @@ export async function loadCharacters(base: string, onProgress?: (p: number) => v
     no: get(guardian, 'headShake'),
     dance,
   };
-  return { student, guardian, playerClips, chaserClips };
+  return { student, guardian, android, playerClips, chaserClips };
 }

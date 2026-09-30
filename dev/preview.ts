@@ -32,7 +32,7 @@ if (who === 'player') {
   for (let i = 0; i < t * 30; i++) p.update(1 / 30, 20, 0, 0, vy, 0);
   obj = p.root;
 } else {
-  const c = new Chaser(ch.guardian, ch.chaserClips, tex, tex, tex);
+  const c = new Chaser(ch.guardian, ch.android, ch.chaserClips, tex, tex, tex);
   c.play(anim as ChaserAnim);
   if (q.get('angry')) c.setAngry(1);
   for (let i = 0; i < t * 30; i++) c.update(1 / 30, 20);
@@ -43,7 +43,8 @@ const side = q.get('v') || 'side';
 const h = who === 'player' ? 1.7 : 2.4;
 if (side === 'side') cam.position.set(5, h * 0.55, 0);
 else if (side === 'front') cam.position.set(0.5, h * 0.6, -5);
+else if (side === 'face') cam.position.set(0.35, h * 0.92, -1.4);
 else cam.position.set(0.5, h * 0.7, 5);
-cam.lookAt(0, h * 0.5, 0);
+cam.lookAt(0, side === 'face' ? h * 0.88 : h * 0.5, 0);
 renderer.render(scene, cam);
 (window as unknown as { done: boolean }).done = true;

@@ -341,7 +341,7 @@ export class Game {
     this.scene.add(this.player.root, this.player.shadowMesh);
     const plate = makeLogoPlate(a.wordmark, 1024, 530, { bg: '#fbfaf6', pad: 0.07, stripes: true });
     const cape = makeCapeTexture(a.wordmark);
-    this.chaser = new Chaser(ch.guardian, ch.chaserClips, plate, cape, blob);
+    this.chaser = new Chaser(ch.guardian, ch.android, ch.chaserClips, plate, cape, blob);
     this.scene.add(this.chaser.root);
     this.particles = new Particles(makeSoftSprite());
 

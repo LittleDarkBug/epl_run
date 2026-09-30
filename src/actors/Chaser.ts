@@ -6,10 +6,12 @@ import { applyBend } from '../render/curve';
 import { damp } from '../core/rng';
 import { AX, AZ, attachToBone, boneWorldPos, rotateBone } from './rigUtil';
 
-// Le Gardien de l'EPL : androide humanoide riggé (X Bot) repeint aux couleurs
-// de l'ecole, anime par capture de mouvement. Accessoires accroches aux os :
-// toque de diplome, visiere lumineuse, plaque logo sur le torse, cape au logo
-// dans le dos, bandes code-barres lumineuses.
+// Le Gardien de l'EPL : androide humanoide modele dans Blender
+// (tools/blender/build_guardian.py) : visage humain sculpte, carrosserie
+// ceramique blanche et bleu EPL, combinaison mecanique. Son maillage est
+// recable sur le squelette Mixamo du X Bot, anime par capture de mouvement.
+// Accessoires accroches aux os : toque de diplome, plaque logo sur le torse,
+// cape au logo dans le dos.
 
 export type ChaserAnim = 'idle' | 'run' | 'roar' | 'grab' | 'victory';
 
@@ -23,6 +25,38 @@ export interface ChaserClips {
 
 const SCALE = 1.3;
 
+// Ramene la geometrie d'un maillage skinne dans l'espace de sa scene, en pose
+// de repos (skinning calcule une fois sur le CPU).
+function restToModel(m: THREE.SkinnedMesh) {
+  const g = m.geometry;
+  const pos = g.attributes.position as THREE.BufferAttribute;
+  const nor = g.attributes.normal as THREE.BufferAttribute | undefined;
+  const si = g.attributes.skinIndex as THREE.BufferAttribute;
+  const sw = g.attributes.skinWeight as THREE.BufferAttribute;
+  const bones = m.skeleton.bones, inv = m.skeleton.boneInverses;
+  const boneMats = bones.map((b, i) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, inv[i]).multiply(m.bindMatrix));
+  const M = new THREE.Matrix4(), T = new THREE.Matrix4(), N = new THREE.Matrix3(), v = new THREE.Vector3();
+  const out = new Float32Array(pos.count * 3), outN = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    M.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    for (let k = 0; k < 4; k++) {
+      const w = sw.getComponent(i, k);
+      if (w === 0) continue;
+      T.copy(boneMats[si.getComponent(i, k)]);
+      for (let e = 0; e < 16; e++) M.elements[e] += T.elements[e] * w;
+    }
+    v.fromBufferAttribute(pos, i).applyMatrix4(M);
+    out.set([v.x, v.y, v.z], i * 3);
+    if (nor) {
+      v.fromBufferAttribute(nor, i).applyMatrix3(N.getNormalMatrix(M)).normalize();
+      outN.set([v.x, v.y, v.z], i * 3);
+    }
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(out, 3));
+  if (nor) g.setAttribute('normal', new THREE.BufferAttribute(outN, 3));
+  g.computeBoundingSphere();
+}
+
 export class Chaser {
   readonly root = new THREE.Group();
   private model: THREE.Object3D;
@@ -30,7 +64,6 @@ export class Chaser {
   private actions: Record<string, THREE.AnimationAction> = {};
   private current: THREE.AnimationAction | null = null;
   private bones: Record<string, THREE.Bone> = {};
-  private visorMat: THREE.MeshStandardMaterial;
   private eyeMat: THREE.MeshStandardMaterial;
   private coreMat: THREE.MeshStandardMaterial;
   private capeUniforms = { uTime: { value: 0 }, uSpeed: { value: 1 } };
@@ -46,28 +79,27 @@ export class Chaser {
   animTime = 0;
   onStomp: (() => void) | null = null;
 
-  constructor(gltf: GLTF, clips: ChaserClips, logoPlate: THREE.Texture, capeTex: THREE.Texture, blobTex: THREE.Texture) {
+  constructor(gltf: GLTF, android: GLTF, clips: ChaserClips, logoPlate: THREE.Texture, capeTex: THREE.Texture, blobTex: THREE.Texture) {
     this.model = gltf.scene;
-    const paint = charMat('#1648b0', { r: 0.26, m: 0.6, rim: 0.8 });
-    const joints = charMat('#23282f', { r: 0.35, m: 0.9, rim: 0.5 });
+    this.eyeMat = charMat('#fff', { e: '#fff3b0', ei: 12 });
+    this.coreMat = charMat('#111', { e: '#35e0ff', ei: 5 });
+    const mats: Record<string, THREE.Material> = {
+      suit: charMat('#16191f', { r: 0.5, m: 0.65, rim: 0.5 }),
+      metal: charMat('#8d939c', { r: 0.28, m: 1.0, rim: 0.4 }),
+      white: charMat('#ebe9e4', { r: 0.26, m: 0.04, rim: 0.55 }),
+      blue: charMat('#1648b0', { r: 0.24, m: 0.45, rim: 0.8 }),
+      skin: charMat('#e6dfd7', { r: 0.36, m: 0.0, rim: 0.45 }),
+      eye: this.eyeMat,
+      glow: this.coreMat,
+    };
     this.model.traverse((o) => {
       if ((o as THREE.Bone).isBone) this.bones[o.name] = o as THREE.Bone;
-      const m = o as THREE.Mesh;
-      if (m.isMesh) {
-        const name = (m.material as THREE.Material).name;
-        m.material = name.includes('Joints') ? joints : paint;
-        m.castShadow = true;
-        m.receiveShadow = true;
-        m.frustumCulled = false;
-      }
     });
+    this.rebind(android, mats);
 
     // Accessoires, poses en repos (T-pose) dans le repere du modele.
     const gold = charMat('#f2c230', { r: 0.25, m: 1.0, rim: 0.5 });
     const black = charMat('#121417', { r: 0.6, m: 0.2, rim: 0.4 });
-    this.visorMat = charMat('#111', { r: 0.1, m: 0.2, e: '#ffcf1f', ei: 7 });
-    this.eyeMat = charMat('#fff', { e: '#fff3b0', ei: 12 });
-    this.coreMat = charMat('#111', { e: '#35e0ff', ei: 5 });
     const B = this.bones;
     const head = B.mixamorigHead, spine2 = B.mixamorigSpine2;
     // Repere de travail : le modele seul, non tourne, a l'echelle 1.
@@ -76,14 +108,13 @@ export class Chaser {
     const top = boneWorldPos(B.mixamorigHeadTop_End ?? head, tmp);
     const hp = boneWorldPos(head, tmp);
     const sp = boneWorldPos(spine2, tmp);
-    const headH = top.y - hp.y;
 
     // Toque.
     const cap = new THREE.Group();
     const board = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.025, 0.42), black);
     board.rotation.y = Math.PI / 4;
     board.position.y = 0.06;
-    cap.add(board, new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.08, 20), black));
+    cap.add(board, new THREE.Mesh(new THREE.CylinderGeometry(0.108, 0.114, 0.08, 24), black));
     const button = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.015, 10), gold);
     button.position.y = 0.08;
     cap.add(button);
@@ -96,15 +127,7 @@ export class Chaser {
     this.tassel.add(cord, tail);
     this.tassel.rotation.y = -Math.PI / 4;
     cap.add(this.tassel);
-    attachToBone(cap, head, tmp, new THREE.Vector3(0, top.y - 0.09, hp.z - 0.01), -0.12);
-
-    // Visiere lumineuse et yeux.
-    const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.045, 24, 1, true, -Math.PI * 0.42, Math.PI * 0.84), this.visorMat);
-    attachToBone(visor, head, tmp, new THREE.Vector3(0, hp.y + headH * 0.55, hp.z + 0.005));
-    for (const s of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), this.eyeMat);
-      attachToBone(eye, head, tmp, new THREE.Vector3(s * 0.04, hp.y + headH * 0.55, hp.z + 0.105));
-    }
+    attachToBone(cap, head, tmp, new THREE.Vector3(0, top.y - 0.005, hp.z - 0.012), -0.1);
 
     // Plaque logo sur le torse, cadre dore, noyau lumineux.
     const plateGroup = new THREE.Group();
@@ -115,19 +138,7 @@ export class Chaser {
     const core = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.02, 18).rotateX(Math.PI / 2), this.coreMat);
     core.position.set(0, -0.15, -0.01);
     plateGroup.add(core);
-    attachToBone(plateGroup, spine2, tmp, new THREE.Vector3(0, sp.y + 0.05, sp.z + 0.13));
-    // Bandes code-barres sur les epaules.
-    const barColors = ['#ff2a36', '#ffd21f', '#14c2b0', '#3d8bff', '#e62bc0'];
-    for (const [name, s] of [['mixamorigLeftArm', 1], ['mixamorigRightArm', -1]] as const) {
-      const bone = B[name];
-      if (!bone) continue;
-      const ap = boneWorldPos(bone, tmp);
-      for (let i = 0; i < 5; i++) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.06, 0.07), charMat('#111', { e: barColors[i], ei: 3.5 }));
-        attachToBone(bar, bone, tmp, new THREE.Vector3(ap.x + s * (0.05 + i * 0.022), ap.y + 0.055, ap.z));
-      }
-    }
-
+    attachToBone(plateGroup, spine2, tmp, new THREE.Vector3(0, sp.y + 0.03, sp.z + 0.158));
     // Cape au logo dans le dos (visible pendant toute la poursuite).
     const capeGeo = new THREE.PlaneGeometry(0.46, 0.85, 8, 14);
     capeGeo.translate(0, -0.425, 0);
@@ -147,9 +158,9 @@ export class Chaser {
     const cape = new THREE.Mesh(capeGeo, capeMat);
     cape.castShadow = true;
     // Plan tourne vers l'arriere du modele (-z en repere modele).
-    attachToBone(cape, spine2, tmp, new THREE.Vector3(0, sp.y + 0.14, sp.z - 0.12), Math.PI);
+    attachToBone(cape, spine2, tmp, new THREE.Vector3(0, sp.y + 0.1, sp.z - 0.145), Math.PI);
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.48, 8).rotateZ(Math.PI / 2), gold);
-    attachToBone(bar, spine2, tmp, new THREE.Vector3(0, sp.y + 0.14, sp.z - 0.11));
+    attachToBone(bar, spine2, tmp, new THREE.Vector3(0, sp.y + 0.1, sp.z - 0.137));
 
     // Retour dans la hierarchie finale.
     this.model.scale.setScalar(SCALE);
@@ -174,6 +185,36 @@ export class Chaser {
     shadow.renderOrder = 1;
     shadow.position.y = 0.02;
     this.root.add(shadow);
+  }
+
+  // Remplace le corps du X Bot par l'androide, recable sur les os du Gardien
+  // (memes noms d'os, meme pose de repos). La geometrie est ramenee dans
+  // l'espace du modele au repos et les matrices inverses recalculees.
+  private rebind(android: GLTF, mats: Record<string, THREE.Material>) {
+    const old: THREE.SkinnedMesh[] = [];
+    this.model.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) old.push(o as THREE.SkinnedMesh); });
+    const ref = old[0].skeleton;
+    const index = new Map(ref.bones.map((b, i) => [b.name, i]));
+    for (const m of old) m.removeFromParent();
+    this.model.updateMatrixWorld(true);
+    android.scene.updateMatrixWorld(true);
+    const parts: THREE.SkinnedMesh[] = [];
+    android.scene.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) parts.push(o as THREE.SkinnedMesh); });
+    for (const m of parts) {
+      const skel = new THREE.Skeleton(m.skeleton.bones.map((b) => ref.bones[index.get(b.name)!]));
+      restToModel(m);
+      m.position.set(0, 0, 0);
+      m.quaternion.identity();
+      m.scale.setScalar(1);
+      this.model.add(m);
+      m.updateMatrixWorld(true);
+      m.bind(skel, new THREE.Matrix4());
+      const src = m.material as THREE.Material;
+      m.material = mats[src.name] ?? mats.white;
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.frustumCulled = false;
+    }
   }
 
   private fade(name: string, time = 0.25) {
@@ -248,18 +289,15 @@ export class Chaser {
     this.tassel.rotation.z = Math.sin(this.time * 7) * 0.35;
     this.tassel.rotation.x = Math.cos(this.time * 5.3) * 0.25;
 
-    // Visiere : jaune, vire au rouge quand il se rapproche.
+    // Yeux : ambre, virent au rouge quand il se rapproche.
     const heat = Math.max(this.angry, a === 'grab' || a === 'roar' || a === 'victory' ? 1 : 0);
-    this.visorMat.emissive.setRGB(1, 0.8 * (1 - heat) + 0.08 * heat, 0.12 * (1 - heat));
-    this.visorMat.emissiveIntensity = 6 + Math.sin(this.time * 12) * heat * 2;
-    this.eyeMat.emissive.setRGB(1, 0.95 - heat * 0.8, 0.7 - heat * 0.65);
-    this.eyeMat.emissiveIntensity = 12;
+    this.eyeMat.emissive.setRGB(1, 0.8 * (1 - heat) + 0.08 * heat, 0.35 * (1 - heat));
+    this.eyeMat.emissiveIntensity = 10 + Math.sin(this.time * 12) * heat * 3;
     this.coreMat.emissiveIntensity = 4 + Math.sin(this.time * 5) * 1.5;
     this.dormant = damp(this.dormant, this.dormantTarget, 2.5, dt);
     if (this.dormant > 0.01) {
       const flicker = this.dormantTarget === 0 && this.dormant > 0.2 ? (Math.random() < 0.5 ? 0.2 : 1) : 1;
       const k = (1 - this.dormant) * flicker;
-      this.visorMat.emissiveIntensity *= k;
       this.eyeMat.emissiveIntensity *= k;
       this.coreMat.emissiveIntensity *= k;
     }

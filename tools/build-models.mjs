@@ -10,7 +10,13 @@ import { MeshoptEncoder } from 'meshoptimizer';
 const KEEP = {
   'guardian.glb': ['idle', 'run', 'agree', 'headShake', 'sad_pose'],
   'student.glb': ['SambaDance', 'TPose'],
+  // Corps de l'androide (tools/blender/build_guardian.py), sans animation.
+  'android.glb': [],
 };
+// Simplification par modele : [ratio, erreur].
+// Le maillage du X Bot n'est plus affiche (remplace par l'androide) : on ne
+// garde qu'une ebauche pour conserver la peau et le squelette.
+const SIMPLIFY = { 'guardian.glb': [0.02, 1], 'android.glb': [0.55, 0.0008] };
 
 await MeshoptEncoder.ready;
 await MeshoptSimplifier.ready;
@@ -18,8 +24,8 @@ const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies(
 for (const [file, keep] of Object.entries(KEEP)) {
   const doc = await io.read(`assets-src/${file}`);
   for (const a of doc.getRoot().listAnimations()) if (!keep.includes(a.getName())) a.dispose();
-  // Le Gardien (X Bot d'origine, tres dense) est simplifie de moitie.
-  const simp = file === 'guardian.glb' ? [weld(), simplify({ simplifier: MeshoptSimplifier, ratio: 0.5, error: 0.0015 })] : [];
+  const sp = SIMPLIFY[file];
+  const simp = sp ? [weld(), simplify({ simplifier: MeshoptSimplifier, ratio: sp[0], error: sp[1] })] : [];
   await doc.transform(dedup(), ...simp, resample({ tolerance: 1e-4 }), prune({ keepLeaves: true }), quantize(), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
   await io.write(`public/models/${file}`, doc);
   console.log('ecrit', file);
