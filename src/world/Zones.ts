@@ -62,6 +62,55 @@ function plane(material: THREE.Material, w: number, h: number, x: number, y: num
 
 // ---------------- Couloir ----------------
 
+// Carrelage granito en damier (texture tuilable : 2 x 2 dalles de 0,9 m).
+let floorMat: THREE.Material | null = null;
+function floorMaterial(): THREE.Material {
+  if (floorMat) return floorMat;
+  const S = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const ctx = c.getContext('2d')!;
+  const cols = ['#e9e1cf', '#b86a4b'];
+  const img = ctx.createImageData(S, S);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const tile = (Math.floor(x / (S / 2)) + Math.floor(y / (S / 2))) % 2;
+      const base = cols[tile];
+      const r = parseInt(base.slice(1, 3), 16), g = parseInt(base.slice(3, 5), 16), b = parseInt(base.slice(5, 7), 16);
+      // Granito : eclats clairs et sombres.
+      const k = rnd();
+      const chip = k > 0.985 ? 1.18 : k < 0.02 ? 0.75 : 0.96 + rnd() * 0.08;
+      const lx = x % (S / 2), ly = y % (S / 2);
+      const grout = lx < 3 || ly < 3 || lx > S / 2 - 3 || ly > S / 2 - 3 ? 0.55 : 1;
+      const o = (y * S + x) * 4;
+      img.data[o] = Math.min(255, r * chip * grout);
+      img.data[o + 1] = Math.min(255, g * chip * grout);
+      img.data[o + 2] = Math.min(255, b * chip * grout);
+      img.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  floorMat = applyBend(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.28, metalness: 0, envMapIntensity: 1.1 }));
+  return floorMat;
+}
+
+const floorGeos = new Map<number, THREE.BufferGeometry>();
+function floorGeometry(W: number): THREE.BufferGeometry {
+  if (!floorGeos.has(W)) {
+    const g = new THREE.PlaneGeometry(W * 2, L).rotateX(-Math.PI / 2);
+    const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * W * 2) / 1.8, (uv.getY(i) * L) / 1.8);
+    floorGeos.set(W, g);
+  }
+  return floorGeos.get(W)!;
+}
+
 export type CorridorPart = 'body' | 'in' | 'out';
 
 export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages, trimSide = 0): { geo: THREE.BufferGeometry; extras: THREE.Object3D[] } {
@@ -71,19 +120,11 @@ export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages, trimS
   const z0 = L / 2, z1 = -L / 2;
   const W = CORRIDOR_HALF, H = CORRIDOR_CEIL;
 
-  // Sol en carrelage granito facon damier.
-  const tile = 0.9;
-  const nx = Math.round((W * 2) / tile);
-  const nz = Math.round(L / tile);
-  const cA = '#e9e1cf', cB = '#b86a4b';
-  for (let i = 0; i < nx; i++) {
-    for (let j = 0; j < nz; j++) {
-      const x = -W + (i + 0.5) * tile;
-      const z = z0 - (j + 0.5) * tile;
-      const a = (i + j) % 2 === 0;
-      b.add(UNIT.box, mat(x, 0.02, z, 0, 0, 0, tile * 0.985, 0.04, tile * 0.985), a ? cA : cB, { r: 0.22 });
-    }
-  }
+  // Sol en carrelage granito : un seul plan texture (voir floorMaterial).
+  const floor = new THREE.Mesh(floorGeometry(W), floorMaterial());
+  floor.position.y = 0.03;
+  floor.receiveShadow = true;
+  extras.push(floor);
   // Plinthes (cachent le trottoir exterieur).
   for (const s of [-1, 1]) b.add(UNIT.box, mat(s * (W - 0.18), 0.22, 0, 0, 0, 0, 0.42, 0.44, L), '#3b2f2a', { r: 0.6 });
 

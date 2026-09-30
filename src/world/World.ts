@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuilder } from '../render/GeoBuilder';
+import { GeoBuilder, enableCulling } from '../render/GeoBuilder';
 import { createUberMaterial } from '../render/uber';
 import { applyBend } from '../render/curve';
 import { makePaverTextures, makeRoadTextures } from '../render/textures';
@@ -124,12 +124,11 @@ export class World {
         const mesh = new THREE.Mesh(geo, m);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
         const holder = new THREE.Group();
         holder.add(mesh);
         for (const e of extras) holder.add(e);
         deco?.(holder);
-        holder.traverse((o) => { o.frustumCulled = false; });
+        enableCulling(holder);
         arr.push(holder);
       }
       this.pools.set(kind, arr);
@@ -165,6 +164,7 @@ export class World {
       start.add(w);
     }
     start.position.z = 6;
+    enableCulling(start);
     this.group.add(start);
 
     // Sol lointain (laterite) qui suit le joueur.

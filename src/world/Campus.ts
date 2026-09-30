@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuilder } from '../render/GeoBuilder';
+import { GeoBuilder, enableCulling } from '../render/GeoBuilder';
 import { createUberMaterial } from '../render/uber';
 import type { BakedAsset } from './assets';
 import { mulberry, pick, range } from '../core/rng';
@@ -59,8 +59,8 @@ export class Campus {
     const mesh = new THREE.Mesh(b.build(), createUberMaterial({ grime: 0.16, groundAO: true }));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
     this.group.add(mesh);
+    enableCulling(this.group);
   }
 
 

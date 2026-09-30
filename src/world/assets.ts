@@ -49,7 +49,6 @@ export async function loadBaked(base: string, dir: string, file: string, onProgr
       if (!m.isMesh) return;
       m.castShadow = true;
       m.receiveShadow = true;
-      m.frustumCulled = false;
       const src = m.material as THREE.MeshStandardMaterial;
       const mat = src.clone();
       mat.envMapIntensity = 0.85;
@@ -83,7 +82,6 @@ export async function loadTrees(base: string): Promise<THREE.Object3D[]> {
       if (!m.isMesh) return;
       m.castShadow = true;
       m.receiveShadow = true;
-      m.frustumCulled = false;
       const src = m.material as THREE.MeshStandardMaterial;
       if (!mats.has(src)) {
         const mat = src.clone();

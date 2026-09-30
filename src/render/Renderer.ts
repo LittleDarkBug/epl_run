@@ -52,7 +52,8 @@ export class Renderer {
     const deviceDpr = Math.min(window.devicePixelRatio || 1, 3);
     // Priorite a la finesse de l'image, quitte a couter un peu de performances.
     this.maxDpr = Math.min(deviceDpr, this.tier === 'low' ? 1.8 : 2);
-    this.minDpr = Math.min(this.maxDpr, this.tier === 'low' ? 1.25 : 1.4);
+    // Plancher bas : si l'appareil peine, la fluidite passe avant la finesse.
+    this.minDpr = Math.min(this.maxDpr, 1.0);
     this.dpr = this.maxDpr;
     renderer.setPixelRatio(this.dpr);
 

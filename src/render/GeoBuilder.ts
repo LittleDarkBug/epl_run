@@ -110,12 +110,29 @@ export function mat(
 // Geometries unitaires partagees (a transformer via mat()).
 export const UNIT = {
   box: new THREE.BoxGeometry(1, 1, 1),
-  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 14, 1),
+  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1),
   cylLow: new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1),
   cone: new THREE.ConeGeometry(0.5, 1, 12, 1),
-  sphere: new THREE.SphereGeometry(0.5, 16, 12),
-  sphereLow: new THREE.SphereGeometry(0.5, 10, 8),
-  torus: new THREE.TorusGeometry(0.5, 0.12, 8, 20),
-  rbox: new RoundedBoxGeometry(1, 1, 1, 2, 0.08),
-  rboxSoft: new RoundedBoxGeometry(1, 1, 1, 3, 0.22),
+  sphere: new THREE.SphereGeometry(0.5, 12, 8),
+  sphereLow: new THREE.SphereGeometry(0.5, 8, 6),
+  torus: new THREE.TorusGeometry(0.5, 0.12, 6, 14),
+  rbox: new RoundedBoxGeometry(1, 1, 1, 1, 0.08),
+  rboxSoft: new RoundedBoxGeometry(1, 1, 1, 2, 0.22),
 };
+
+// Elimination hors champ compatible avec la courbure du monde : les sommets
+// ne font que descendre au loin, on elargit donc un peu les spheres
+// englobantes pour rester prudent.
+export function enableCulling(root: THREE.Object3D, margin = 3) {
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    m.frustumCulled = true;
+    const g = m.geometry;
+    if (!g.userData.inflated) {
+      g.computeBoundingSphere();
+      if (g.boundingSphere) g.boundingSphere.radius += margin;
+      g.userData.inflated = true;
+    }
+  });
+}

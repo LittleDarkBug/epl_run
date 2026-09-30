@@ -6,16 +6,17 @@ import * as THREE from 'three';
 const qW = new THREE.Quaternion();
 const qP = new THREE.Quaternion();
 const qA = new THREE.Quaternion();
+const qR = new THREE.Quaternion();
+const vAxis = new THREE.Vector3();
 
 // Tourne un os autour d'un axe exprime dans le repere du personnage (root).
 export function rotateBone(bone: THREE.Object3D, root: THREE.Object3D, axis: THREE.Vector3, angle: number) {
   if (Math.abs(angle) < 1e-4) return;
   root.getWorldQuaternion(qA);
-  const worldAxis = axis.clone().applyQuaternion(qA).normalize();
+  vAxis.copy(axis).applyQuaternion(qA).normalize();
   bone.updateWorldMatrix(true, false);
   bone.getWorldQuaternion(qW);
-  const rot = new THREE.Quaternion().setFromAxisAngle(worldAxis, angle);
-  qW.premultiply(rot);
+  qW.premultiply(qR.setFromAxisAngle(vAxis, angle));
   if (bone.parent) bone.parent.getWorldQuaternion(qP);
   else qP.identity();
   bone.quaternion.copy(qP.invert().multiply(qW));
