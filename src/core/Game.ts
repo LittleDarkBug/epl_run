@@ -157,6 +157,13 @@ export class Game {
     canvas.addEventListener('pointerup', () => {
       if (this.state === 'caught') this.skipCaught = true;
     });
+    // Premier geste : l'audio se deverrouille et la musique du menu demarre.
+    window.addEventListener('pointerup', () => {
+      if (this.state === 'menu' || this.state === 'over') this.audio.startMenuMusic();
+    });
+    document.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest?.('button')) this.audio.tick();
+    }, true);
     this.best = store.get('best', 0);
     this.totalCoins = store.get('coins', 0);
     this.tutorialDone = store.get('tuto', 0) === 1;
@@ -346,7 +353,10 @@ export class Game {
     this.particles = new Particles(makeSoftSprite());
 
     this.player.onFootstep = () => {
-      if (this.state === 'playing' || this.state === 'intro') this.particles.footDust(this.pw.x, this.y, this.pw.z, 2);
+      if (this.state === 'playing' || this.state === 'intro') {
+        this.particles.footDust(this.pw.x, this.y, this.pw.z, 2);
+        if (this.grounded) this.audio.footstep(this.zone === 'corridor' ? 'tile' : this.zone === 'court' ? 'dirt' : 'asphalt');
+      }
     };
     this.chaser.onStomp = () => {
       const vol = clamp(1 - (this.chaserDist - 3) / 10, 0, 1);
@@ -400,7 +410,9 @@ export class Game {
 
   private collectPiece(p: DossierPiece, x: number, y: number, z: number) {
     this.dossier.add(p);
-    this.audio.stamp();
+    if (p === 'stamp') this.audio.stamp();
+    else if (p === 'copy') this.audio.copy();
+    else this.audio.signature();
     this.particles.sparkle(x, y, z, [1, 0.85, 0.4], 30);
     const names: Record<DossierPiece, string> = { stamp: 'TAMPON', copy: 'COPIE LÉGALISÉE', signature: 'SIGNATURE DU CHEF' };
     if (this.dossier.size >= 3) {
@@ -410,7 +422,7 @@ export class Game {
       this.warn = 0;
       const pts = 500 * this.multiplier();
       this.score += pts;
-      this.audio.powerUp();
+      this.audio.shieldUp();
       this.ui.flashWhite(0.45);
       this.ui.toast(`DOSSIER COMPLET ! +${pts}`, false, 1600);
     } else {
@@ -427,7 +439,7 @@ export class Game {
     this.shake = 0.35;
     this.hitStop = 0.1;
     this.renderer.hit(1.2);
-    this.audio.stumble();
+    this.audio.shieldBreak();
     this.player.play('stumble');
     this.particles.sparkle(this.pw.x, this.y + 1, this.pw.z, [1, 0.85, 0.4], 40);
     this.ui.flashWhite(0.35);
@@ -493,6 +505,8 @@ export class Game {
     this.ui.setMenuStats(this.best, this.totalCoins);
     this.ui.show('menu');
     document.getElementById('mute')!.classList.remove('hidden');
+    this.audio.ambience(false);
+    this.audio.startMenuMusic();
     const p = this.menuCamera(0);
     this.camPos.copy(p.pos);
     this.camLook.copy(p.look);
@@ -536,8 +550,11 @@ export class Game {
 
   private beginRun() {
     this.audio.unlock();
+    this.audio.setSpeed(0);
+    this.audio.setZone(this.zone);
     this.audio.startMusic();
     this.audio.duckMusic(false);
+    this.audio.ambience(true, this.zone);
     this.state = 'intro';
     this.stateTime = 0;
     this.ui.show('hud');
@@ -567,6 +584,7 @@ export class Game {
     this.stateTime = 0;
     this.ui.show('hud', 'countdown');
     this.ui.countdown(3);
+    this.audio.countdown(3);
   }
 
   private onAction(a: Action) {
@@ -721,6 +739,7 @@ export class Game {
   private updatePlaying(dt: number) {
     this.runTime += dt;
     this.speed = SPEED.start + (SPEED.max - SPEED.start) * (1 - Math.exp(-this.dist / SPEED.rampDistance));
+    this.audio.setSpeed((this.speed - SPEED.start) / (SPEED.max - SPEED.start));
     this.simulate(dt);
     this.score += this.speed * dt * 0.5 * this.multiplier();
     for (const k of Object.keys(this.timers) as PowerUpType[]) {
@@ -812,6 +831,7 @@ export class Game {
     }
     if (zone !== this.zone) {
       this.zone = zone;
+      this.audio.setZone(zone);
       if (this.state === 'playing') this.ui.zone(zone);
     }
 
@@ -916,6 +936,7 @@ export class Game {
     this.turnQueued = 0;
     this.cornerAnnounced = -1;
     this.ui.turnHint(0);
+    this.audio.turn(Math.sign(seg.turn));
     this.shake = Math.max(this.shake, 0.05);
   }
 
@@ -925,6 +946,7 @@ export class Game {
     if (this.dist > seg.s1 - 48 && this.cornerAnnounced !== seg.i) {
       this.cornerAnnounced = seg.i;
       this.cornersSeen++;
+      this.audio.cornerCue();
       if (this.cornersSeen <= 3) this.ui.turnHint(seg.turn);
     }
   }
@@ -954,7 +976,7 @@ export class Game {
       this.player.play('jump');
       return;
     }
-    this.audio.crash();
+    this.audio.fall();
     this.shake = 0.4;
     this.falling = true;
     this.caught('Tu es tombé dans un caniveau ouvert.');
@@ -1017,8 +1039,8 @@ export class Game {
     this.chaser.play('grab');
     this.ui.setDanger(false);
     this.ui.tutorial(null);
-    this.audio.duckMusic(true);
     this.audio.setIntensity(0);
+    this.audio.caught();
   }
 
   private updateCaught(dt: number) {
@@ -1058,6 +1080,7 @@ export class Game {
     if (record) {
       this.best = Math.floor(this.score);
       store.set('best', this.best);
+      this.audio.newRecord();
     }
     this.totalCoins += this.coins;
     store.set('coins', this.totalCoins);
@@ -1077,11 +1100,13 @@ export class Game {
       if (this.countdownN <= 0) {
         this.state = 'playing';
         this.ui.show('hud');
+        this.audio.countdown(0);
         this.audio.duckMusic(false);
         this.lastTime = performance.now();
         return;
       }
       this.ui.countdown(this.countdownN);
+      this.audio.countdown(this.countdownN);
     }
   }
 
