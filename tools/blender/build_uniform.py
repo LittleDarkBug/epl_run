@@ -305,14 +305,24 @@ tint = np.array([0.105, 0.15, 0.27])  # meme bleu marine que la veste (#1a2544)
 k = (0.95 + 0.2 * (np.clip(lum / 0.8, 0.35, 1.2) - 1))[..., None]
 px[..., :3] = np.where(yellow[..., None], tint * k, px[..., :3])
 # Bandes decoratives du pantalon (au milieu des zones reteintes) -> uni.
+# Motifs a l'interieur du pantalon : pixels encadres de drap des deux cotes
+# (horizontalement ou verticalement) a moins de 18 px. Les chaussures, hors
+# de la zone, ne sont pas touchees.
+def framed(mask, axis, reach=18):
+    lo = np.zeros_like(mask)
+    hi = np.zeros_like(mask)
+    for d in range(1, reach + 1):
+        lo |= np.roll(mask, d, axis)
+        hi |= np.roll(mask, -d, axis)
+    return lo & hi
+
+
+plain = ~yellow & (framed(yellow, 0) | framed(yellow, 1))
+# Revers gris du bas (bord de l'ilot, non encadre) : gris neutre tout pres du drap.
 near = yellow.copy()
-for _ in range(7):
+for _ in range(6):
     near = near | np.roll(near, 1, 0) | np.roll(near, -1, 0) | np.roll(near, 1, 1) | np.roll(near, -1, 1)
-cyan = near & (b > 0.55) & (g > 0.5) & (r < 0.45)
-# Bandes et revers sombres du sarouel -> meme drap bleu marine (pantalon uni).
-dark = near & ~yellow & (lum < 0.25) & (np.abs(r - b) < 0.12)
-bluish = near & ~yellow & (b > r + 0.12)
-plain = cyan | dark | bluish
+plain |= near & ~yellow & (lum < 0.45) & (np.abs(r - b) < 0.08) & (np.abs(r - g) < 0.08)
 px[..., :3] = np.where(plain[..., None], tint * 0.9, px[..., :3])
 print('pantalon uni', int(plain.sum()), 'pixels')
 cloth = yellow | plain

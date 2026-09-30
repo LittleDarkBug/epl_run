@@ -15,9 +15,11 @@ function target(t: number): number {
 }
 
 // Allongement du bas : le revers qui laissait la cheville nue descend sur la
-// chaussure (t = 1 -> 1.19), comme un pantalon de costume.
+// chaussure (plafonne a t = 1.06), comme un pantalon de costume.
 const HEM0 = 0.75;
-const stretch = (t: number) => (t < HEM0 ? t : HEM0 + (t - HEM0) * 1.75);
+// Plafonne a t = 1.06 : au-dela, les sommets passeraient sous le sol et
+// etireraient les faces raccordees a la chaussure.
+const stretch = (t: number) => (t < HEM0 ? t : Math.min(1.06, HEM0 + (t - HEM0) * 1.35));
 
 // `rest` : os au repos (meme squelette), dans l'espace de la scene.
 export function tailorTrousers(body: THREE.SkinnedMesh, rest: Map<string, THREE.Object3D>) {
