@@ -12,6 +12,8 @@ const KEEP = {
   'student.glb': ['SambaDance', 'TPose'],
   // Corps de l'androide (tools/blender/build_guardian.py), sans animation.
   'android.glb': [],
+  // Tenue EPL d'Afi (tools/blender/build_uniform.py).
+  'uniform.glb': [],
 };
 // Simplification par modele : [ratio, erreur].
 // Le maillage du X Bot n'est plus affiche (remplace par l'androide) : on ne

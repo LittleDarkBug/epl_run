@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { charMat } from './materials';
 import { applyBend } from '../render/curve';
 import { damp } from '../core/rng';
-import { AX, AY, AZ, attachToBone, boneWorldPos, rotateBone } from './rigUtil';
+import { AX, AY, AZ, attachToBone, boneWorldPos, restToModel, rotateBone } from './rigUtil';
 
 // Le Gardien de l'EPL : androide humanoide modele dans Blender
 // (tools/blender/build_guardian.py) : visage humain sculpte, carrosserie
@@ -24,38 +24,6 @@ export interface ChaserClips {
 }
 
 const SCALE = 1.3;
-
-// Ramene la geometrie d'un maillage skinne dans l'espace de sa scene, en pose
-// de repos (skinning calcule une fois sur le CPU).
-function restToModel(m: THREE.SkinnedMesh) {
-  const g = m.geometry;
-  const pos = g.attributes.position as THREE.BufferAttribute;
-  const nor = g.attributes.normal as THREE.BufferAttribute | undefined;
-  const si = g.attributes.skinIndex as THREE.BufferAttribute;
-  const sw = g.attributes.skinWeight as THREE.BufferAttribute;
-  const bones = m.skeleton.bones, inv = m.skeleton.boneInverses;
-  const boneMats = bones.map((b, i) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, inv[i]).multiply(m.bindMatrix));
-  const M = new THREE.Matrix4(), T = new THREE.Matrix4(), N = new THREE.Matrix3(), v = new THREE.Vector3();
-  const out = new Float32Array(pos.count * 3), outN = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; i++) {
-    M.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    for (let k = 0; k < 4; k++) {
-      const w = sw.getComponent(i, k);
-      if (w === 0) continue;
-      T.copy(boneMats[si.getComponent(i, k)]);
-      for (let e = 0; e < 16; e++) M.elements[e] += T.elements[e] * w;
-    }
-    v.fromBufferAttribute(pos, i).applyMatrix4(M);
-    out.set([v.x, v.y, v.z], i * 3);
-    if (nor) {
-      v.fromBufferAttribute(nor, i).applyMatrix3(N.getNormalMatrix(M)).normalize();
-      outN.set([v.x, v.y, v.z], i * 3);
-    }
-  }
-  g.setAttribute('position', new THREE.BufferAttribute(out, 3));
-  if (nor) g.setAttribute('normal', new THREE.BufferAttribute(outN, 3));
-  g.computeBoundingSphere();
-}
 
 export class Chaser {
   readonly root = new THREE.Group();

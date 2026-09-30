@@ -105,13 +105,15 @@ export function makeRoadTextures(maxAniso: number, markings = true): RoadTexture
       const lanePos = ((m + 1.25) % 2.5 + 2.5) % 2.5 - 1.25;
       // Traces de roues legerement plus sombres et plus lisses.
       const tire = Math.exp(-Math.pow((Math.abs(lanePos) - 0.62) / 0.28, 2));
-      let v = 0.2 + n[i] * 0.1 + (mid[i] - 0.5) * 0.04;
+      // Bitume clair et chaud (goudron blanchi au soleil) : les silhouettes
+      // sombres, comme l'uniforme bleu marine, s'en detachent nettement.
+      let v = 0.36 + n[i] * 0.1 + (mid[i] - 0.5) * 0.05;
       v *= 1 - tire * 0.12;
       const edge = Math.max(0, Math.min(1, (Math.abs(m) - 3.7) / 0.8));
       const o = i * 4;
-      img.data[o] = Math.min(255, (v + edge * 0.16 * n[i]) * 255);
-      img.data[o + 1] = Math.min(255, (v * 0.98 + edge * 0.07 * n[i]) * 255);
-      img.data[o + 2] = Math.min(255, (v * 1.02 + edge * 0.02 * n[i]) * 255);
+      img.data[o] = Math.min(255, (v * 1.04 + edge * 0.16 * n[i]) * 255);
+      img.data[o + 1] = Math.min(255, (v * 0.99 + edge * 0.07 * n[i]) * 255);
+      img.data[o + 2] = Math.min(255, (v * 0.92 + edge * 0.02 * n[i]) * 255);
       img.data[o + 3] = 255;
       height[i] = n[i] * 0.7 + mid[i] * 0.3;
       const rough = 0.86 + (mid[i] - 0.5) * 0.06 - tire * 0.1;

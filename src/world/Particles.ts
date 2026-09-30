@@ -168,8 +168,8 @@ export class Particles {
       this.glow.spawn({
         x, y, z,
         vx: Math.cos(a) * Math.cos(e) * sp, vy: Math.sin(e) * sp + 1.5, vz: Math.sin(a) * Math.cos(e) * sp,
-        life: 0, max: 0.35 + Math.random() * 0.3, size: 0.22, grow: -0.6,
-        r: color[0] * 3, g: color[1] * 3, b: color[2] * 3, a: 1, drag: 4, grav: 4, world: false,
+        life: 0, max: 0.22 + Math.random() * 0.2, size: 0.11, grow: -0.8,
+        r: color[0] * 1.5, g: color[1] * 1.5, b: color[2] * 1.5, a: 0.9, drag: 4, grav: 4, world: false,
       });
     }
   }

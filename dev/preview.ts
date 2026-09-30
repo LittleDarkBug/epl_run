@@ -26,7 +26,7 @@ const anim = q.get('a') || 'run';
 const t = Number(q.get('t') || 0.5);
 let obj: THREE.Object3D;
 if (who === 'player') {
-  const p = new Player(ch.student, ch.playerClips, tex);
+  const p = new Player(ch.student, ch.playerClips, tex, ch.uniform, ch.afiBody, ch.afiRough);
   p.play(anim as PlayerAnim);
   const vy = Number(q.get('vy') || 5);
   for (let i = 0; i < t * 30; i++) p.update(1 / 30, 20, 0, 0, vy, 0);
@@ -44,7 +44,8 @@ const h = who === 'player' ? 1.7 : 2.4;
 if (side === 'side') cam.position.set(5, h * 0.55, 0);
 else if (side === 'front') cam.position.set(0.5, h * 0.6, -5);
 else if (side === 'face') cam.position.set(0.35, h * 0.92, -1.4);
+else if (side === 'legs') cam.position.set(0.6, h * 0.3, -2.4);
 else cam.position.set(0.5, h * 0.7, 5);
-cam.lookAt(0, side === 'face' ? h * 0.88 : h * 0.5, 0);
+cam.lookAt(0, side === 'face' ? h * 0.88 : side === 'legs' ? h * 0.3 : h * 0.5, 0);
 renderer.render(scene, cam);
 (window as unknown as { done: boolean }).done = true;

@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { applyBend } from '../render/curve';
-import { rimUniform } from './materials';
+import { charMat, rimUniform } from './materials';
 import { damp } from '../core/rng';
-import { AX, AZ, rotateBone } from './rigUtil';
+import { AX, AZ, graftSkinned, rotateBone } from './rigUtil';
+import { tailorTrousers } from './tailor';
 
 // Afi, l'etudiante en fuite : modele riggé (maillage continu, textures de
-// peau et de vetements) anime par capture de mouvement retargetee, avec des
+// peau et de vetements) en tenue de l'EPL (veste et cravate bleu marine,
+// tools/blender/build_uniform.py) anime par capture de mouvement retargetee, avec des
 // surcouches procedurales pour le saut, la glissade, le faux pas et la chute.
 
 export type PlayerAnim = 'idle' | 'run' | 'jump' | 'slide' | 'stumble' | 'fall' | 'cheer' | 'sad' | 'no' | 'yes';
@@ -43,7 +45,9 @@ export class Player {
   animTime = 0;
   onFootstep: (() => void) | null = null;
 
-  constructor(gltf: GLTF, clips: PlayerClips, blobTex: THREE.Texture) {
+  private crestMat: THREE.MeshStandardMaterial;
+
+  constructor(gltf: GLTF, clips: PlayerClips, blobTex: THREE.Texture, uniform?: GLTF, bodyTex?: THREE.Texture, roughTex?: THREE.Texture) {
     this.model = gltf.scene;
     this.model.rotation.y = Math.PI; // le modele regarde +z, le joueur court vers -z
     this.root.add(this.body);
@@ -57,18 +61,47 @@ export class Player {
         m.frustumCulled = false;
         const src = m.material as THREE.MeshStandardMaterial;
         const mat = src.clone();
+        if (bodyTex && mat.map) mat.map = bodyTex;
+        if (roughTex && mat.roughnessMap) mat.roughnessMap = roughTex;
+        if (roughTex && mat.metalnessMap) mat.metalnessMap = roughTex;
+        // Filtrage anisotrope : textures nettes meme vues de biais.
+        for (const t of [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap]) if (t) t.anisotropy = 8;
         mat.envMapIntensity = 0.9;
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.uRim = rimUniform;
           shader.fragmentShader = shader.fragmentShader
             .replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
             .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-              { vec3 vd = normalize(vViewPosition); float rim = pow(1.0 - clamp(dot(normal, vd), 0.0, 1.0), 3.0); totalEmissiveRadiance += uRim * rim * 0.8; }`);
+              { vec3 vd = normalize(vViewPosition); float rim = pow(1.0 - clamp(dot(normal, vd), 0.0, 1.0), 4.0); totalEmissiveRadiance += uRim * rim * 0.8; }`);
         };
         mat.customProgramCacheKey = () => 'afi';
         m.material = applyBend(mat);
       }
     });
+
+    // Tenue EPL greffee sur le squelette d'Afi.
+    this.crestMat = charMat('#ffffff', { r: 0.6, rim: 0.3 });
+    let body: THREE.SkinnedMesh | null = null;
+    this.model.traverse((o) => { if (!body && (o as THREE.SkinnedMesh).isSkinnedMesh) body = o as THREE.SkinnedMesh; });
+    if (uniform && body) {
+      // Pantalon de costume (coupe droite) a partir du sarouel d'origine.
+      const rest = new Map<string, THREE.Object3D>();
+      uniform.scene.updateMatrixWorld(true);
+      uniform.scene.traverse((o) => { if ((o as THREE.Bone).isBone) rest.set(o.name, o); });
+      tailorTrousers(body, rest);
+      const mats: Record<string, THREE.Material> = {
+        navy: charMat('#1a2544', { r: 0.78, rim: 0.7 }),
+        shirt: charMat('#eef0f3', { r: 0.7, rim: 0.4 }),
+        tie: charMat('#121a33', { r: 0.42, rim: 0.6 }),
+        gold: charMat('#d9a441', { r: 0.3, m: 1, rim: 0.4 }),
+        crest: this.crestMat,
+      };
+      for (const m of graftSkinned(body, uniform.scene)) {
+        m.material = mats[(m.material as THREE.Material).name] ?? mats.navy;
+        m.castShadow = true;
+        m.receiveShadow = true;
+      }
+    }
 
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const [k, c] of Object.entries(clips)) {
@@ -102,6 +135,12 @@ export class Player {
 
   get shadowMesh(): THREE.Mesh {
     return this.shadow;
+  }
+
+  // Ecusson de l'EPL sur la poche de poitrine.
+  setCrest(tex: THREE.Texture) {
+    this.crestMat.map = tex;
+    this.crestMat.needsUpdate = true;
   }
 
   setSuperSneakers(on: boolean) {

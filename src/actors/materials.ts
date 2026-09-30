@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { applyBend } from '../render/curve';
 
 // Materiaux des personnages : PBR standard, courbure du monde et liseré
-// lumineux (rim light) pour detacher les silhouettes du decor.
+// lumineux (rim light) discret et froid pour detacher les silhouettes du
+// decor, sous le seuil du bloom (pas de halo).
 
-export const rimUniform = { value: new THREE.Color('#ffc890').multiplyScalar(0.55) };
+export const rimUniform = { value: new THREE.Color('#9eb8e6').multiplyScalar(0.16) };
 
 export function charMat(
   color: THREE.ColorRepresentation,
@@ -29,7 +30,7 @@ export function charMat(
         `#include <emissivemap_fragment>
         {
           vec3 vd = normalize(vViewPosition);
-          float rim = pow(1.0 - clamp(dot(normal, vd), 0.0, 1.0), 3.0);
+          float rim = pow(1.0 - clamp(dot(normal, vd), 0.0, 1.0), 4.0);
           totalEmissiveRadiance += uRim * rim * ${rim};
         }`,
       );

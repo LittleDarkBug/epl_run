@@ -131,6 +131,26 @@ export class UI {
   }
 
   private zoneTimer = 0;
+  private threatTimer = 0;
+
+  // Carte d'alerte : le Gardien lance un formulaire rejete.
+  threat(ms = 2300) {
+    const el = $('threat');
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this.threatTimer);
+    this.threatTimer = window.setTimeout(() => el.classList.remove('show'), ms);
+  }
+
+  // Coup de tampon plein ecran.
+  stamp(text: string) {
+    const el = $('stamp-fx');
+    el.querySelector('span')!.textContent = text;
+    el.classList.remove('slam');
+    void el.offsetWidth;
+    el.classList.add('slam');
+  }
 
   zone(z: 'street' | 'corridor' | 'court') {
     const pickOne = (a: string[]) => a[Math.floor(Math.random() * a.length)];

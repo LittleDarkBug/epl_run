@@ -52,14 +52,18 @@ export class Renderer {
     const deviceDpr = Math.min(window.devicePixelRatio || 1, 3);
     // Priorite a la finesse de l'image, quitte a couter un peu de performances.
     this.maxDpr = Math.min(deviceDpr, this.tier === 'low' ? 1.8 : 2);
-    // Plancher bas : si l'appareil peine, la fluidite passe avant la finesse.
-    this.minDpr = Math.min(this.maxDpr, 1.0);
+    // Plancher : si l'appareil peine, la fluidite passe avant la finesse, sans
+    // descendre sous 1.4 sur les ecrans denses (sinon l'image devient floue et
+    // les contours crenelés une fois agrandie).
+    this.minDpr = Math.min(this.maxDpr, deviceDpr >= 2 ? 1.4 : 1.0);
     this.dpr = this.maxDpr;
     renderer.setPixelRatio(this.dpr);
 
     this.composer = new EffectComposer(renderer, {
       frameBufferType: THREE.HalfFloatType,
-      multisampling: this.tier === 'high' && deviceDpr < 2 ? 4 : 0,
+      // MSAA materiel 4x partout : quasi gratuit sur les GPU mobiles (rendu
+      // par tuiles) et seul capable de lisser proprement les silhouettes.
+      multisampling: renderer.capabilities.isWebGL2 ? 4 : 0,
     });
     this.renderPass = new RenderPass(scene, camera);
     this.composer.addPass(this.renderPass);
@@ -82,10 +86,9 @@ export class Renderer {
     const sat = new HueSaturationEffect({ saturation: 0.08 });
     const bc = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.06 });
 
-    // SMAA a tous les niveaux : sans lui, les aretes fines scintillent en mouvement.
-    const smaa = new SMAAEffect({ preset: this.tier === 'high' ? SMAAPreset.HIGH : this.tier === 'medium' ? SMAAPreset.MEDIUM : SMAAPreset.LOW });
     this.composer.addPass(new EffectPass(camera, this.bloom, this.chroma, tone, sat, bc, vignette));
-    this.composer.addPass(new EffectPass(camera, smaa));
+    // SMAA seulement sans MSAA (WebGL 1) : sinon passes inutiles.
+    if (!renderer.capabilities.isWebGL2) this.composer.addPass(new EffectPass(camera, new SMAAEffect({ preset: SMAAPreset.MEDIUM })));
   }
 
   get shadowMapSize(): number {
@@ -114,7 +117,7 @@ export class Renderer {
   }
 
   // Resolution dynamique avec hysteresis : on ne baisse qu'apres 2 s de
-  // frames lentes, on ne remonte qu'apres 6 s de marge, par petits pas, pour
+  // frames lentes, on remonte apres 2.5 s de marge, par petits pas, pour
   // eviter l'effet de pompage de la nettete.
   private adapt(dt: number) {
     this.frameTimes.push(dt);
@@ -125,7 +128,7 @@ export class Renderer {
     this.fastTime = avg < 0.0145 ? this.fastTime + dt : 0;
     let next = this.dpr;
     if (this.slowTime > 2) next = Math.max(this.minDpr, this.dpr - 0.15);
-    else if (this.fastTime > 6) next = Math.min(this.maxDpr, this.dpr + 0.1);
+    else if (this.fastTime > 2.5) next = Math.min(this.maxDpr, this.dpr + 0.15);
     if (Math.abs(next - this.dpr) > 0.01) {
       this.dpr = next;
       this.slowTime = this.fastTime = 0;

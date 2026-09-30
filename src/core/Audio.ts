@@ -1,5 +1,5 @@
 import * as S from '../audio/dsp';
-import type { Mono } from '../audio/dsp';
+import { CHORDS, recipe } from '../audio/recipes';
 
 // Moteur sonore (WebAudio). Tous les sons sont synthetises une fois dans des
 // tampons (src/audio/dsp.ts) puis rejoues : peu couteux sur mobile.
@@ -29,12 +29,6 @@ interface PlayOpts {
 
 // Gamme pentatonique de la mineur (balafon) et grille d'accords.
 const SCALE = [57, 60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84];
-const CHORDS = [
-  { root: 45, notes: [57, 60, 64, 67] }, // Am7
-  { root: 41, notes: [57, 60, 64, 65] }, // Fmaj7
-  { root: 48, notes: [55, 60, 64, 67] }, // C
-  { root: 43, notes: [55, 59, 62, 65] }, // G7
-];
 const _ = -1;
 // Phrases de balafon (2 mesures de 16 doubles-croches, degres de SCALE).
 const PHRASES: number[][] = [
@@ -245,13 +239,28 @@ export class Audio {
       ...[0, 1, 2].map((i) => `chat${i}`), 'charge', 'launch', 'flyby', 'boom', 'fallw', 'beep0', 'beep1',
       ...SCALE.slice(4).map((m) => `coin${m + 12}`), ...CHORDS.flatMap((c) => c.notes.map((n) => `arp${n + 12}`)), ...SCALE.map((m) => `rob${m}`),
     ];
-    let i = 0;
-    const tick = () => {
-      const t0 = performance.now();
-      while (i < keys.length && performance.now() - t0 < 6) this.b(keys[i++]);
-      if (i < keys.length) window.setTimeout(tick, 16);
-    };
-    window.setTimeout(tick, 50);
+    const ctx = this.ctx!;
+    try {
+      // Synthese dans un worker : aucun cout pour le rendu graphique.
+      const w = new Worker(new URL('../audio/worker.ts', import.meta.url), { type: 'module' });
+      w.onmessage = (e: MessageEvent<{ key: string; data: Float32Array<ArrayBuffer>; sr: number }>) => {
+        const { key, data, sr } = e.data;
+        if (this.bufs.has(key)) return;
+        const b = ctx.createBuffer(1, data.length, sr);
+        b.copyToChannel(data, 0);
+        this.bufs.set(key, b);
+      };
+      w.postMessage({ keys, sr: ctx.sampleRate });
+    } catch {
+      // Sans worker : petites tranches en tache de fond.
+      let i = 0;
+      const tick = () => {
+        const t0 = performance.now();
+        while (i < keys.length && performance.now() - t0 < 3) this.b(keys[i++]);
+        if (i < keys.length) window.setTimeout(tick, 40);
+      };
+      window.setTimeout(tick, 200);
+    }
   }
 
   private play(b: AudioBuffer, o: PlayOpts = {}): AudioBufferSourceNode | null {
@@ -687,52 +696,6 @@ export class Audio {
     [0, 2, 3].forEach((c, k) => this.play(this.b(`brass${c}`), { gain: 0.45, when: t + k * 0.16, verb: 0.3 }));
     this.play(this.b('shimup'), { gain: 0.5, when: t + 0.4 });
   }
-}
-
-// Recette de chaque son a partir de sa cle : [fabrique, diviseur de frequence
-// d'echantillonnage (les nappes et ambiances sont calculees a mi-resolution)].
-function recipe(key: string): [(sr: number) => Mono, number] {
-  const num = (p: string) => Number(key.slice(p.length));
-  const chord = (p: string) => CHORDS[num(p)].notes;
-  const fixed: Record<string, (sr: number) => Mono> = {
-    kick: S.kick, rim: S.rim, clap: S.clap, crash: S.crash,
-    shk: (sr) => S.shaker(sr), shkL: (sr) => S.shaker(sr, true),
-    bellhi: (sr) => S.bell(sr, 1560), belllo: (sr) => S.bell(sr, 1040),
-    riser: (sr) => S.riser(sr, 4.2),
-    uitick: (sr) => S.uiTick(sr), swish: (sr) => S.whoosh(sr, 0.15, 800, 3200, 1.6),
-    jump: (sr) => S.whoosh(sr, 0.24, 500, 2600), sjump: (sr) => S.whoosh(sr, 0.5, 300, 4000, 1),
-    land: (sr) => S.thud(sr, 130, 0.5, 0.25), slide: (sr) => S.scrape(sr, 0.5), slidew: (sr) => S.whoosh(sr, 0.2, 1200, 400),
-    turnw: (sr) => S.whoosh(sr, 0.35, 400, 2400, 1.1), squeak: S.squeak,
-    stumble: (sr) => S.impact(sr, false), crashfx: (sr) => S.impact(sr, true), fallw: S.fallWhistle,
-    shimup: (sr) => S.shimmer(sr, true), stamp: S.stampHit, copier: S.copier, scribble: S.scribble, glass: S.glass,
-    rstep: S.robotStep, roar: S.robotRoar, whistle: S.whistle,
-    charge: S.charge, launch: S.launch, flyby: S.flyby, boom: S.explosion,
-    beep0: (sr) => S.beep(sr, 1320, 0.3), beep1: (sr) => S.beep(sr, 880, 0.12),
-    schoolbell: S.schoolBell, horn: S.horn, moto: S.moto,
-  };
-  if (fixed[key]) return [fixed[key], 1];
-  if (key.startsWith('mpad')) return [(sr) => S.pad(sr, chord('mpad'), 2.7), 2];
-  if (key.startsWith('pad')) return [(sr) => S.pad(sr, chord('pad'), 2.5), 2];
-  if (key.startsWith('brass')) return [(sr) => S.brass(sr, chord('brass').map((n) => n + 12)), 1];
-  if (key.startsWith('amb')) return [(sr) => S.ambience(sr, key.slice(3) as 'street'), 2];
-  if (key.startsWith('lbass')) return [(sr) => S.bassNote(sr, num('lbass'), 0.5), 1];
-  if (key.startsWith('bass')) return [(sr) => S.bassNote(sr, num('bass')), 1];
-  if (key.startsWith('bal')) return [(sr) => S.balafon(sr, num('bal')), 1];
-  if (key.startsWith('arp')) return [(sr) => S.arpNote(sr, num('arp')), 1];
-  if (key.startsWith('rob')) return [(sr) => S.robotNote(sr, num('rob')), 1];
-  if (key.startsWith('coin')) return [(sr) => S.coinTing(sr, num('coin')), 1];
-  if (key.startsWith('tom')) return [(sr) => S.tom(sr, 180 - num('tom') * 5), 1];
-  if (key.startsWith('chat')) return [S.robotChatter, 1];
-  if (key.startsWith('bird')) return [S.bird, 1];
-  if (key.startsWith('td')) {
-    const f0 = Number(key.slice(2, 5));
-    return [(sr) => S.talkingDrum(sr, f0, Number(key.slice(5))), 1];
-  }
-  if (key.startsWith('step')) {
-    const surf = (['asphalt', 'tile', 'dirt'] as const).find((x) => key.startsWith('step' + x))!;
-    return [(sr) => S.step(sr, surf), 1];
-  }
-  throw new Error('Son inconnu : ' + key);
 }
 
 // WAV muet (1 s, 8 kHz) en data URI, pour l'element <audio> de deverrouillage.

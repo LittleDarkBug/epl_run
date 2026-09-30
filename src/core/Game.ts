@@ -143,7 +143,7 @@ export class Game {
   private turnQueued = 0;
   private projectiles!: Projectiles;
   private projTimer = 0;
-  private projSeen = false;
+  private projSeen = 0;
   private laneDur: number = PLAYER.laneChangeTime;
   private pw = new THREE.Vector3();
   private yaw = 0;
@@ -353,7 +353,8 @@ export class Game {
   private setupActors(a: Assets) {
     const blob = makeBlobShadow();
     const ch = a.characters;
-    this.player = new Player(ch.student, ch.playerClips, blob);
+    this.player = new Player(ch.student, ch.playerClips, blob, ch.uniform, ch.afiBody, ch.afiRough);
+    this.player.setCrest(makeLogoPlate(a.wordmark, 512, 426, { bg: '#fbfaf6', pad: 0.1 }));
     this.scene.add(this.player.root, this.player.shadowMesh);
     const plate = makeLogoPlate(a.wordmark, 1024, 530, { bg: '#fbfaf6', pad: 0.07, stripes: true });
     const cape = makeCapeTexture(a.wordmark);
@@ -414,9 +415,10 @@ export class Game {
     this.projectiles.spawn(st, laneX(lane), T);
     this.audio.projCharge();
     this.audio.taunt();
-    if (!this.projSeen) {
-      this.projSeen = true;
-      this.ui.toast('ESQUIVE LES DOSSIERS REJETÉS !', true, 1800);
+    // Carte d'explication pour les deux premiers tirs.
+    if (this.projSeen < 2) {
+      this.projSeen++;
+      this.ui.threat();
     }
     return true;
   }
@@ -437,8 +439,8 @@ export class Game {
     pr.update(dt);
     if (this.state === 'playing' && pr.hits(this.dist, this.x, this.y)) {
       this.particles.sparkle(this.pw.x, this.y + 1, this.pw.z, [1, 0.3, 0.1], 25);
-      this.ui.toast('DOSSIER REJETÉ !', true);
-      this.onStumble(this.x);
+      this.ui.stamp('REJETÉ');
+      this.onStumble(this.x, true);
     }
   }
 
@@ -447,7 +449,7 @@ export class Game {
       this.coins++;
       this.score += 5 * this.multiplier();
       this.audio.coin();
-      this.particles.sparkle(x, y, z, [1, 0.78, 0.2], 7);
+      this.particles.sparkle(x, y, z, [1, 0.85, 0.45], 5);
     };
     this.track.onPowerUp = (t, x, y, z) => {
       if (t === 'diploma') {
@@ -1060,7 +1062,7 @@ export class Game {
     this.caught('Tu es tombé dans un caniveau ouvert.');
   }
 
-  private onStumble(fromX: number) {
+  private onStumble(fromX: number, quiet = false) {
     // Retour sur la voie de depart.
     this.lane = clamp(Math.round(fromX / laneX(1)), -1, 1);
     this.laneFromX = this.x;
@@ -1078,7 +1080,7 @@ export class Game {
     this.warn = CHASER.warnTime;
     this.player.play('stumble');
     this.audio.whistle();
-    this.ui.toast('ATTENTION !', true);
+    if (!quiet) this.ui.toast('ATTENTION !', true);
   }
 
   private onCrash(type: string) {
@@ -1307,8 +1309,8 @@ export class Game {
     // Ciel et silhouette lointaine suivent la camera.
     this.sky.position.copy(this.camera.position);
     this.skyline.position.set(this.camera.position.x, 0, this.camera.position.z);
-    // Liseré lumineux plus fort en menu (contre-jour flatteur).
-    rimUniform.value.setRGB(1, 0.78, 0.56).multiplyScalar(s === 'menu' || s === 'over' ? 0.4 : 0.6);
+    // Liseré discret et froid (sous le seuil du bloom : aucun halo).
+    rimUniform.value.setRGB(0.62, 0.72, 0.9).multiplyScalar(s === 'menu' || s === 'over' ? 0.12 : 0.16);
   }
 
   private resize() {

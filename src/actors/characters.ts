@@ -14,6 +14,9 @@ export interface Characters {
   student: GLTF;
   guardian: GLTF;
   android: GLTF;
+  uniform: GLTF;
+  afiBody: THREE.Texture;
+  afiRough: THREE.Texture;
   playerClips: PlayerClips;
   chaserClips: ChaserClips;
 }
@@ -37,17 +40,24 @@ function inPlace(clip: THREE.AnimationClip, hips = 'mixamorigHips'): THREE.Anima
 export async function loadCharacters(base: string, onProgress?: (p: number) => void): Promise<Characters> {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
-  const prog = [0, 0, 0];
+  const prog = [0, 0, 0, 0];
   const track = (i: number) => (e: ProgressEvent) => {
     if (!e.total) return;
     prog[i] = e.loaded / e.total;
-    onProgress?.((prog[0] + prog[1] + prog[2]) / 3);
+    onProgress?.((prog[0] + prog[1] + prog[2] + prog[3]) / 4);
   };
-  const [student, guardian, android] = await Promise.all([
+  const [student, guardian, android, uniform, afiBody, afiRough] = await Promise.all([
     loader.loadAsync(`${base}models/student.glb`, track(0)),
     loader.loadAsync(`${base}models/guardian.glb`, track(1)),
     loader.loadAsync(`${base}models/android.glb`, track(2)),
+    loader.loadAsync(`${base}models/uniform.glb`, track(3)),
+    new THREE.TextureLoader().loadAsync(`${base}models/afi_body.jpg`),
+    new THREE.TextureLoader().loadAsync(`${base}models/afi_rough.jpg`),
   ]);
+  afiRough.flipY = false;
+  // Texture du corps d'Afi reteinte (pantalon bleu nuit de la tenue EPL).
+  afiBody.flipY = false;
+  afiBody.colorSpace = THREE.SRGBColorSpace;
 
   const get = (g: GLTF, n: string) => {
     const c = g.animations.find((x) => x.name === n);
@@ -85,5 +95,5 @@ export async function loadCharacters(base: string, onProgress?: (p: number) => v
     no: get(guardian, 'headShake'),
     dance,
   };
-  return { student, guardian, android, playerClips, chaserClips };
+  return { student, guardian, android, uniform, afiBody, afiRough, playerClips, chaserClips };
 }
