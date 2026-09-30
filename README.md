@@ -11,7 +11,7 @@ npm run build    # version de production dans dist/
 npm run preview  # sert la version de production
 ```
 
-Commandes : glisser le doigt à gauche ou à droite pour changer de voie, vers le haut pour sauter, vers le bas pour glisser. Un geste correspond toujours à une seule action, même s'il est long. Au clavier : flèches, espace et Échap.
+Commandes : glisser le doigt à gauche ou à droite pour changer de voie, et pour tourner à l'approche d'un carrefour ; vers le haut pour sauter, vers le bas pour glisser. Un geste correspond toujours à une seule action, même s'il est long. Au clavier : flèches, espace et Échap.
 
 ## Application installable (PWA)
 
@@ -27,11 +27,12 @@ Commandes : glisser le doigt à gauche ou à droite pour changer de voie, vers l
 
 
 - Cinématique d'ouverture : le cauchemar administratif (guichets, tampons, réveil du Gardien), rejouable depuis le menu.
+- Un chemin sinueux à la Temple Run : des carrefours à angle droit où il faut tourner au bon moment (sinon, c'est le mur du fond, signalé par des panneaux à chevrons), des caniveaux ouverts à sauter, des banderoles et des branches basses sous lesquelles glisser.
 - Trois zones qui s'enchaînent : rues de Lomé, couloirs des bâtiments de l'EPL, routes du campus de l'UL (Pelouse centrale, Amphi 20, Grand Amphi FDS, UniPod).
-- Obstacles propres à chaque lieu : dans les rues de Lomé, barrières de chantier, kiosques, voitures et minibus garés, zemidjans à contresens ; dans les couloirs, piles de livres, tables-bancs, chaises d'amphi, tableaux noirs et photocopieuses sur roulettes ; sur le campus, voitures garées et estrade de remise des diplômes sur laquelle on peut monter et courir. Partout, les banderoles d'examens obligent à glisser dessous.
+- Obstacles propres à chaque lieu : dans les rues de Lomé, barrières de chantier, kiosques, voitures garées, zemidjans à contresens et caniveaux ; dans les couloirs, piles de livres, tables-bancs, chaises d'amphi, tableaux noirs et photocopieuses sur roulettes ; sur le campus, voitures garées, branches basses, caniveaux et estrade de remise des diplômes sur laquelle on peut monter et courir. Partout, les banderoles d'examens obligent à glisser dessous.
 - Dossier administratif : le tampon, la copie légalisée et la signature du chef apparaissent au fil de la course. Les trois réunis rapportent un gros bonus et protègent d'une collision (le Gardien recule).
 - À ramasser : cahiers aux couleurs du logo EPL, diplômes (gros bonus, surtout sur les estrades), aimant, super baskets, bonne note x2.
-- Personnages riggés et animés par capture de mouvement : Afi, l'étudiante en fuite, et le Gardien de l'EPL, androïde bleu en toque de diplômé avec le logo EPL sur le torse et sur la cape. Deux faux pas rapprochés et il t'attrape, puis il fête ça en dansant la samba.
+- Personnages riggés et animés par capture de mouvement : Afi, l'étudiante en fuite, et le Gardien de l'EPL, androïde bleu en toque de diplômé avec le logo EPL sur le torse et sur la cape. Deux faux pas rapprochés et il t'attrape, puis il fête ça en dansant la samba (un toucher abrège la scène).
 
 ## Technique
 

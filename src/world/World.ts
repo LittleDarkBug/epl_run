@@ -5,24 +5,25 @@ import { applyBend } from '../render/curve';
 import { makePaverTextures, makeRoadTextures } from '../render/textures';
 import { mulberry, range, Rng } from '../core/rng';
 import { buildCorridor, buildCourt, ZoneImages } from './Zones';
+import { buildJunction, JUNCTION_WALKS } from './Junction';
+import { J, L, Path, Segment } from './Path';
 import { WORLD } from '../config';
 import {
   addBuilding, addBush, addCurb, addLamp, addPalm, addStall, addStreetBits,
   ROAD_HALF, SIDEWALK_OUT, SIDEWALK_Y, BuildingKind,
 } from './Scenery';
 
-// Decor defilant : route texturee a UV glissantes et blocs de facades
-// pre-generes recycles a l'infini.
+// Blocs de facades pre-generes (rue), recycles le long du chemin.
 
-const L = WORLD.blockLength;
+export const TRIM_LEN = 16;
 
-function buildBlock(r: Rng): THREE.BufferGeometry {
+function buildBlock(r: Rng, trimSide = 0): THREE.BufferGeometry {
   const b = new GeoBuilder();
   const z0 = L / 2, z1 = -L / 2;
   for (const side of [-1, 1]) {
     addCurb(b, side, z0, z1);
-    // Facades.
-    let z = z0;
+    // Facades (cote interieur d'un virage : degage au debut du bloc).
+    let z = side === trimSide ? z0 - TRIM_LEN : z0;
     let lastKind: BuildingKind | null = null;
     while (z > z1 + 0.5) {
       let len = range(r, 6, 12);
@@ -35,7 +36,7 @@ function buildBlock(r: Rng): THREE.BufferGeometry {
       z -= len;
     }
     // Mobilier de trottoir.
-    for (let zz = z0 - 3; zz > z1; zz -= range(r, 5, 9)) {
+    for (let zz = (side === trimSide ? z0 - TRIM_LEN : z0) - 3; zz > z1; zz -= range(r, 5, 9)) {
       const t = r();
       if (t < 0.18) addPalm(b, side * (ROAD_HALF + 1.6), SIDEWALK_Y, zz, range(r, 6, 8.5), r);
       else if (t < 0.34) addStall(b, side, zz, r);
@@ -49,187 +50,237 @@ function buildBlock(r: Rng): THREE.BufferGeometry {
   return b.build();
 }
 
-export type Zone = 'street' | 'corridor' | 'court';
-type Kind = 'street' | 'corridor' | 'corridorIn' | 'corridorOut' | 'court' | 'courtIn';
+type Kind = string;
 
-// Enchainement des zones, en nombre de blocs.
-const SCHEDULE: [Zone, number][] = [
-  ['street', 12], ['corridor', 9], ['street', 7], ['court', 10], ['street', 8], ['corridor', 10], ['court', 9],
-];
-const START_S = 4;
-
-interface Active {
-  mesh: THREE.Mesh;
+interface Piece {
+  obj: THREE.Object3D;
   kind: Kind;
-  s0: number;
+  sEnd: number;
 }
 
-export function zoneOfBlock(i: number): { zone: Zone; first: boolean; last: boolean } {
-  if (i < 0) return { zone: 'street', first: false, last: false };
-  let idx = 0, k = i;
-  const loopFrom = 1;
-  for (;;) {
-    const [zone, n] = SCHEDULE[idx];
-    if (k < n) return { zone, first: k === 0, last: k === n - 1 };
-    k -= n;
-    idx++;
-    if (idx >= SCHEDULE.length) idx = loopFrom;
-  }
-}
-
-export function zoneAt(s: number): Zone {
-  return zoneOfBlock(Math.floor((s - START_S) / L)).zone;
-}
-
+// Decor pose le long du chemin : blocs de 36 m par troncon et carrefours.
+// Les objets sont recycles (pools) et places en coordonnees monde.
 export class World {
   readonly group = new THREE.Group();
-  private pools = new Map<Kind, THREE.Mesh[]>();
-  private active: Active[] = [];
-  private nextIndex = 0;
-  private road: THREE.Mesh;
-  private walks: THREE.Mesh[] = [];
-  private roadTex: THREE.Texture[] = [];
-  private walkTex: THREE.Texture[] = [];
-  private travelled = 0;
+  private pools = new Map<Kind, THREE.Object3D[]>();
+  private active: Piece[] = [];
+  private cursor = { seg: 0, block: 0, s: 0 };
+  private ground: THREE.Mesh;
 
-  constructor(maxAniso: number, img: ZoneImages) {
+  constructor(maxAniso: number, img: ZoneImages, private path: Path) {
     const uber = createUberMaterial({ grime: 0.14, groundAO: true });
     const uberIn = createUberMaterial({ grime: 0.12, groundAO: false });
     const r = mulberry(1234);
-    const make = (kind: Kind, n: number, fn: () => { geo: THREE.BufferGeometry; extras: THREE.Object3D[] }, m = uber) => {
-      const arr: THREE.Mesh[] = [];
+
+    // Route, asphalte nu (carrefours) et trottoirs : maillages partages.
+    const rt = makeRoadTextures(maxAniso);
+    const plain = makeRoadTextures(maxAniso, false);
+    const pv = makePaverTextures(maxAniso);
+    const roadMat = (t: RoadTexturesT) => applyBend(new THREE.MeshStandardMaterial({
+      map: t.map, roughnessMap: t.roughnessMap, normalMap: t.normalMap,
+      normalScale: new THREE.Vector2(0.45, 0.45), roughness: 1, metalness: 0, envMapIntensity: 0.9,
+    }));
+    const road = roadMat(rt);
+    const plainMat = roadMat(plain);
+    for (const t of [plain.map, plain.roughnessMap, plain.normalMap]) t.wrapS = THREE.RepeatWrapping;
+    const walk = applyBend(new THREE.MeshStandardMaterial({ map: pv.map, normalMap: pv.normalMap, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.9, envMapIntensity: 0.6 }));
+
+    const roadGeo = new THREE.PlaneGeometry(ROAD_HALF * 2, L).rotateX(-Math.PI / 2);
+    scaleUv(roadGeo, 1, L / 18);
+    const walkW = SIDEWALK_OUT - ROAD_HALF + 0.35;
+    const walkGeo = new THREE.PlaneGeometry(walkW, L).rotateX(-Math.PI / 2);
+    scaleUv(walkGeo, walkW / 1.6, L / 1.6);
+    const withRoad = (m: THREE.Object3D) => {
+      const rd = new THREE.Mesh(roadGeo, road);
+      rd.receiveShadow = true;
+      m.add(rd);
+      for (const side of [-1, 1]) {
+        const w = new THREE.Mesh(walkGeo, walk);
+        w.position.set(side * (ROAD_HALF + walkW / 2 - 0.2), SIDEWALK_Y, 0);
+        w.receiveShadow = true;
+        m.add(w);
+      }
+    };
+    const junctionFloor = (m: THREE.Object3D) => {
+      const g = new THREE.PlaneGeometry(2 * J, 2 * J).rotateX(-Math.PI / 2);
+      scaleUv(g, (2 * J) / 9, (2 * J) / 18);
+      const f = new THREE.Mesh(g, plainMat);
+      f.receiveShadow = true;
+      m.add(f);
+      for (const [x0, x1, z0, z1] of JUNCTION_WALKS) {
+        const wg = new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2);
+        scaleUv(wg, (x1 - x0) / 1.6, (z1 - z0) / 1.6);
+        const w = new THREE.Mesh(wg, walk);
+        w.position.set((x0 + x1) / 2, SIDEWALK_Y + 0.005, (z0 + z1) / 2);
+        w.receiveShadow = true;
+        m.add(w);
+      }
+    };
+
+    const make = (kind: Kind, n: number, fn: () => { geo: THREE.BufferGeometry; extras: THREE.Object3D[] }, m: THREE.Material, deco?: (o: THREE.Object3D) => void) => {
+      const arr: THREE.Object3D[] = [];
       for (let i = 0; i < n; i++) {
         const { geo, extras } = fn();
         const mesh = new THREE.Mesh(geo, m);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
-        for (const e of extras) mesh.add(e);
-        arr.push(mesh);
+        const holder = new THREE.Group();
+        holder.add(mesh);
+        for (const e of extras) holder.add(e);
+        deco?.(holder);
+        holder.traverse((o) => { o.frustumCulled = false; });
+        arr.push(holder);
       }
       this.pools.set(kind, arr);
     };
-    make('street', 14, () => ({ geo: buildBlock(r), extras: [] }));
-    make('corridor', 9, () => buildCorridor(r, 'body', img), uberIn);
-    make('corridorIn', 2, () => buildCorridor(r, 'in', img), uberIn);
-    make('corridorOut', 2, () => buildCorridor(r, 'out', img), uberIn);
-    make('court', 10, () => buildCourt(r, 'body', img));
-    make('courtIn', 2, () => buildCourt(r, 'in', img));
-    // Route.
-    const rt = makeRoadTextures(maxAniso);
-    const roadLen = WORLD.visibleAhead + WORLD.keepBehind + 40;
-    const roadGeo = new THREE.PlaneGeometry(ROAD_HALF * 2, roadLen, 1, 60);
-    roadGeo.rotateX(-Math.PI / 2);
-    const repeat = roadLen / 18;
-    for (const t of [rt.map, rt.roughnessMap, rt.normalMap]) t.repeat.set(1, repeat);
-    const roadMat = applyBend(new THREE.MeshStandardMaterial({
-      map: rt.map,
-      roughnessMap: rt.roughnessMap,
-      normalMap: rt.normalMap,
-      normalScale: new THREE.Vector2(0.45, 0.45),
-      roughness: 1,
-      metalness: 0,
-      envMapIntensity: 0.9,
-    }));
-    this.road = new THREE.Mesh(roadGeo, roadMat);
-    this.road.position.z = WORLD.keepBehind - roadLen / 2 + 20;
-    this.road.receiveShadow = true;
-    this.road.frustumCulled = false;
-    this.roadTex = [rt.map, rt.roughnessMap, rt.normalMap];
-    this.group.add(this.road);
-
-    // Trottoirs.
-    const pv = makePaverTextures(maxAniso);
-    const ww = SIDEWALK_OUT - ROAD_HALF + 0.4;
-    for (const t of [pv.map, pv.normalMap]) t.repeat.set(ww / 1.6, roadLen / 1.6);
-    const walkMat = applyBend(new THREE.MeshStandardMaterial({
-      map: pv.map,
-      normalMap: pv.normalMap,
-      normalScale: new THREE.Vector2(0.6, 0.6),
-      roughness: 0.9,
-      envMapIntensity: 0.6,
-    }));
-    this.walkTex = [pv.map, pv.normalMap];
-    for (const side of [-1, 1]) {
-      const g = new THREE.PlaneGeometry(ww, roadLen, 1, 60);
-      g.rotateX(-Math.PI / 2);
-      const m = new THREE.Mesh(g, walkMat);
-      m.position.set(side * (ROAD_HALF + ww / 2 - 0.2), SIDEWALK_Y, this.road.position.z);
-      m.receiveShadow = true;
-      m.frustumCulled = false;
-      this.walks.push(m);
-      this.group.add(m);
+    const plainBlock = (fn: () => THREE.BufferGeometry) => () => ({ geo: fn(), extras: [] });
+    make('street', 12, plainBlock(() => buildBlock(r)), uber, withRoad);
+    for (const t of [-1, 1]) {
+      make('street' + t, 2, plainBlock(() => buildBlock(r, t)), uber, withRoad);
+      make('corridorIn' + t, 2, () => buildCorridor(r, 'in', img, t), uberIn);
+      make('courtIn' + t, 2, () => buildCourt(r, 'in', img, t), uber, withRoad);
     }
+    make('corridorIn', 1, () => buildCorridor(r, 'in', img), uberIn);
+    make('courtIn', 1, () => buildCourt(r, 'in', img), uber, withRoad);
+    make('corridor', 6, () => buildCorridor(r, 'body', img), uberIn);
+    make('corridorOut', 2, () => buildCorridor(r, 'out', img), uberIn);
+    make('court', 8, () => buildCourt(r, 'body', img), uber, withRoad);
+    make('jstreet', 3, plainBlock(() => buildJunction(r, 'street')), uber, junctionFloor);
+    make('jcourt', 3, plainBlock(() => buildJunction(r, 'court')), uber, junctionFloor);
 
-    // Sol lointain (laterite) sous les blocs.
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(700, roadLen + 200, 1, 40).rotateX(-Math.PI / 2),
+    // Route d'acces devant le batiment de l'EPL (derriere le depart).
+    const start = new THREE.Group();
+    const sg = new THREE.PlaneGeometry(ROAD_HALF * 2, 20).rotateX(-Math.PI / 2);
+    scaleUv(sg, 1, 20 / 18);
+    const sr = new THREE.Mesh(sg, road);
+    sr.receiveShadow = true;
+    start.add(sr);
+    const swg = new THREE.PlaneGeometry(walkW, 20).rotateX(-Math.PI / 2);
+    scaleUv(swg, walkW / 1.6, 20 / 1.6);
+    for (const side of [-1, 1]) {
+      const w = new THREE.Mesh(swg, walk);
+      w.position.set(side * (ROAD_HALF + walkW / 2 - 0.2), SIDEWALK_Y, 0);
+      w.receiveShadow = true;
+      start.add(w);
+    }
+    start.position.z = 6;
+    this.group.add(start);
+
+    // Sol lointain (laterite) qui suit le joueur.
+    this.ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2),
       applyBend(new THREE.MeshStandardMaterial({ color: '#9a5a3a', roughness: 1 })),
     );
-    ground.position.set(0, -0.12, this.road.position.z - 100);
-    ground.receiveShadow = true;
-    ground.frustumCulled = false;
-    this.group.add(ground);
-
-    this.reset();
+    this.ground.position.y = -0.12;
+    this.ground.receiveShadow = true;
+    this.ground.frustumCulled = false;
+    this.group.add(this.ground);
   }
 
   reset(dist = 0) {
-    for (const a of this.active) {
-      this.group.remove(a.mesh);
-      this.pools.get(a.kind)!.push(a.mesh);
+    for (const p of this.active) {
+      this.group.remove(p.obj);
+      this.pools.get(p.kind)!.push(p.obj);
     }
     this.active = [];
-    this.travelled = dist;
-    this.nextIndex = Math.max(0, Math.floor((dist - WORLD.keepBehind - START_S) / L));
-    this.update(dist);
+    this.cursor = { seg: 0, block: 0, s: 0 };
+    // Avance le curseur jusqu'a la zone de depart (parametre de debogage).
+    this.path.ensure(dist);
+    while (true) {
+      const g = this.path.segs[this.cursor.seg];
+      const end = this.cursor.block < g.nBlocks ? g.blocksFrom + (this.cursor.block + 1) * L : g.s1 + J;
+      if (end >= dist - WORLD.keepBehind) break;
+      this.advanceCursor();
+    }
+    this.update(dist, 0, 0);
   }
 
-  private kindFor(i: number): Kind {
-    const z = zoneOfBlock(i);
-    if (z.zone === 'corridor') return z.first ? 'corridorIn' : z.last ? 'corridorOut' : 'corridor';
-    if (z.zone === 'court') return z.first ? 'courtIn' : 'court';
-    return 'street';
+  private advanceCursor() {
+    const c = this.cursor;
+    const g = this.path.segs[c.seg];
+    if (c.block < g.nBlocks) {
+      c.block++;
+      c.s = g.blocksFrom + c.block * L;
+    } else {
+      c.seg++;
+      c.block = 0;
+      c.s = g.s1 + J;
+    }
   }
 
-  private spawn(i: number) {
-    const kind = this.kindFor(i);
+  private kindFor(g: Segment, block: number): Kind {
+    const first = block === 0 && g.prevTurn !== 0;
+    const t = first ? String(g.prevTurn) : '';
+    if (g.zone === 'corridor') {
+      if (block === 0) return 'corridorIn' + t;
+      if (block === g.nBlocks - 1) return 'corridorOut';
+      return 'corridor';
+    }
+    if (g.zone === 'court') return block === 0 ? 'courtIn' + t : 'court';
+    return 'street' + t;
+  }
+
+  private junctionStyle(g: Segment): 'street' | 'court' {
+    const next = this.path.segs[g.i + 1];
+    const z = next && next.zone !== 'corridor' ? next.zone : g.zone !== 'corridor' ? g.zone : 'street';
+    return z === 'court' ? 'court' : 'street';
+  }
+
+  private take(kind: Kind): THREE.Object3D {
     const pool = this.pools.get(kind)!;
     const idx = Math.floor(Math.random() * pool.length);
-    const mesh = pool.splice(idx, 1)[0];
-    // Miroir aleatoire (hors couloir, dont les deux murs different).
-    mesh.scale.x = kind === 'street' || kind === 'court' ? (Math.random() < 0.5 ? 1 : -1) : 1;
-    this.active.push({ mesh, kind, s0: START_S + i * L });
-    this.group.add(mesh);
+    return pool.splice(idx, 1)[0];
   }
 
-  // dist : distance parcourue par le joueur.
-  update(dist: number) {
-    this.travelled = dist;
+  private spawnNext() {
+    const c = this.cursor;
+    this.path.ensure(c.s + L);
+    const g = this.path.segs[c.seg];
+    let obj: THREE.Object3D;
+    let kind: Kind;
+    let sEnd: number;
+    if (c.block < g.nBlocks) {
+      kind = this.kindFor(g, c.block);
+      obj = this.take(kind);
+      const sc = g.blocksFrom + (c.block + 0.5) * L;
+      this.path.posOn(g, sc, 0, obj.position);
+      obj.rotation.set(0, this.path.yawOf(g), 0);
+      // Miroir aleatoire des blocs symetriques pour multiplier les variantes.
+      obj.scale.set(kind === 'street' || kind === 'court' ? (Math.random() < 0.5 ? 1 : -1) : 1, 1, 1);
+      sEnd = sc + L / 2;
+    } else {
+      kind = 'j' + this.junctionStyle(g);
+      obj = this.take(kind);
+      this.path.posOn(g, g.s1, 0, obj.position);
+      obj.rotation.set(0, this.path.yawOf(g), 0);
+      obj.scale.set(g.turn, 1, 1); // virage a gauche = miroir
+      sEnd = g.s1 + J;
+    }
+    this.active.push({ obj, kind, sEnd });
+    this.group.add(obj);
+    this.advanceCursor();
+  }
+
+  // dist : abscisse du joueur ; (px, pz) : sa position monde.
+  update(dist: number, px: number, pz: number) {
     for (let i = this.active.length - 1; i >= 0; i--) {
-      const a = this.active[i];
-      const zc = dist - (a.s0 + L / 2);
-      if (zc - L / 2 > WORLD.keepBehind) {
-        this.group.remove(a.mesh);
-        this.pools.get(a.kind)!.push(a.mesh);
+      const p = this.active[i];
+      if (p.sEnd < dist - WORLD.keepBehind) {
+        this.group.remove(p.obj);
+        this.pools.get(p.kind)!.push(p.obj);
         this.active.splice(i, 1);
-        continue;
       }
-      a.mesh.position.set(0, 0, zc);
     }
-    while (START_S + this.nextIndex * L - dist < WORLD.visibleAhead) {
-      this.spawn(this.nextIndex);
-      const a = this.active[this.active.length - 1];
-      a.mesh.position.set(0, 0, dist - (a.s0 + L / 2));
-      this.nextIndex++;
-    }
-    this.scrollTextures();
+    while (this.cursor.s < dist + WORLD.visibleAhead) this.spawnNext();
+    this.ground.position.set(Math.round(px / 50) * 50, -0.12, Math.round(pz / 50) * 50);
   }
+}
 
-  private scrollTextures() {
-    const off = this.travelled / 18;
-    for (const t of this.roadTex) t.offset.y = off;
-    const offW = this.travelled / 1.6;
-    for (const t of this.walkTex) t.offset.y = offW;
-  }
+type RoadTexturesT = ReturnType<typeof makeRoadTextures>;
+
+function scaleUv(g: THREE.BufferGeometry, su: number, sv: number) {
+  const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  uv.needsUpdate = true;
 }

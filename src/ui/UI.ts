@@ -153,6 +153,18 @@ export class UI {
     el.classList.toggle('shield', shield);
   }
 
+  // Fleche d'annonce de virage (0 pour masquer).
+  turnHint(dir: number) {
+    const el = $('turn-hint');
+    if (!dir) {
+      el.classList.remove('show');
+      return;
+    }
+    el.classList.toggle('left', dir < 0);
+    $('turn-text').textContent = dir < 0 ? 'Glisse à gauche pour tourner' : 'Glisse à droite pour tourner';
+    el.classList.add('show');
+  }
+
   setDanger(on: boolean) {
     this.danger.classList.toggle('on', on);
   }

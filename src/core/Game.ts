@@ -5,8 +5,22 @@ import { makeBlobShadow, makeCapeTexture, makeLogoPlate, makeSoftSprite } from '
 import { World } from '../world/World';
 import { Campus } from '../world/Campus';
 import { Track, PowerUpType, DossierPiece } from '../world/Track';
-import { zoneAt, Zone } from '../world/World';
 import { CORRIDOR_CEIL } from '../world/Zones';
+import { Path, J, Zone } from '../world/Path';
+
+// Distance avant le coin a partir de laquelle un geste lateral fait tourner.
+const TURN_WINDOW = 22;
+// Duree de la sequence de capture (danse du Gardien) avant l'ecran de fin.
+const CAUGHT_TIME = 4.6;
+
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+function dampAngle(a: number, b: number, k: number, dt: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * (1 - Math.exp(-k * dt));
+}
 import { Particles } from '../world/Particles';
 import { Player } from '../actors/Player';
 import { Chaser } from '../actors/Chaser';
@@ -68,6 +82,11 @@ export class Game {
 
   private sky!: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private sun!: THREE.DirectionalLight;
+  private skyline!: THREE.Group;
+  private lightQ = new THREE.Quaternion();
+  private lightInvQ = new THREE.Quaternion();
+  private texel = 0.05;
+  private tmpV = new THREE.Vector3();
   get sunLight() {
     return this.sun;
   }
@@ -113,6 +132,17 @@ export class Game {
   // Dossier administratif : tampon, photocopie legalisee, signature du chef.
   private dossier = new Set<DossierPiece>();
   private shield = false;
+  // Chemin sinueux : troncon courant, virage demande, position monde.
+  private path = new Path(Math.floor(Math.random() * 1e9));
+  private segIdx = 0;
+  private turnQueued = 0;
+  private pw = new THREE.Vector3();
+  private yaw = 0;
+  private camYaw = 0;
+  private cornerAnnounced = -1;
+  private cornersSeen = 0;
+  private falling = false;
+  private skipCaught = false;
   private zone: Zone = 'street';
 
   // Camera.
@@ -124,6 +154,9 @@ export class Game {
     this.renderer = new Renderer(canvas, this.scene, this.camera);
     this.input = new Input(canvas);
     this.input.on((a) => this.onAction(a));
+    canvas.addEventListener('pointerup', () => {
+      if (this.state === 'caught') this.skipCaught = true;
+    });
     this.best = store.get('best', 0);
     this.totalCoins = store.get('coins', 0);
     this.tutorialDone = store.get('tuto', 0) === 1;
@@ -214,9 +247,9 @@ export class Game {
   async load(assets: Assets) {
     const steps: [number, () => void][] = [
       [0.1, () => this.setupLights()],
-      [0.3, () => (this.world = new World(this.renderer.renderer.capabilities.getMaxAnisotropy(), assets))],
+      [0.3, () => (this.world = new World(this.renderer.renderer.capabilities.getMaxAnisotropy(), assets, this.path))],
       [0.45, () => (this.campus = new Campus(assets.campus, assets.trees))],
-      [0.65, () => (this.track = new Track())],
+      [0.65, () => (this.track = new Track(this.path))],
       [0.8, () => this.setupActors(assets)],
       [0.9, () => this.setupEnv()],
     ];
@@ -242,7 +275,8 @@ export class Game {
     this.scene.fog = new THREE.FogExp2(PALETTE.fog, 0.0078);
     this.sky = createSky(true);
     this.scene.add(this.sky);
-    this.scene.add(createSkyline());
+    this.skyline = createSkyline();
+    this.scene.add(this.skyline);
 
     const hemi = new THREE.HemisphereLight('#a9b6ff', '#c7825a', 1.05);
     this.scene.add(hemi);
@@ -268,14 +302,20 @@ export class Game {
     cam.lookAt(sun.target.position);
     cam.updateMatrixWorld();
     const inv = cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+    // Zone carree autour du joueur (le chemin tourne) ; elle le suit en se
+    // calant sur la grille de texels pour eviter le scintillement des ombres.
     const box = new THREE.Box3();
-    for (const x of [-18, 18]) for (const y of [0, 18]) for (const z of [-60, 14]) box.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(inv));
+    const off = sun.target.position;
+    for (const x of [-40, 40]) for (const y of [0, 18]) for (const z of [-40, 40]) box.expandByPoint(new THREE.Vector3(x + off.x, y, z + off.z).applyMatrix4(inv));
     cam.left = box.min.x;
     cam.right = box.max.x;
     cam.bottom = box.min.y;
     cam.top = box.max.y;
     cam.updateProjectionMatrix();
     this.sun = sun;
+    this.lightQ.copy(cam.quaternion);
+    this.lightInvQ.copy(cam.quaternion).invert();
+    this.texel = (cam.right - cam.left) / size;
   }
 
   private setupEnv() {
@@ -306,13 +346,14 @@ export class Game {
     this.particles = new Particles(makeSoftSprite());
 
     this.player.onFootstep = () => {
-      if (this.state === 'playing' || this.state === 'intro') this.particles.footDust(this.x, this.y, 0.1, 2);
+      if (this.state === 'playing' || this.state === 'intro') this.particles.footDust(this.pw.x, this.y, this.pw.z, 2);
     };
     this.chaser.onStomp = () => {
       const vol = clamp(1 - (this.chaserDist - 3) / 10, 0, 1);
       if (this.state !== 'menu') {
         this.audio.stomp(vol);
-        this.particles.footDust(this.chaserX, 0, this.chaserDist, 3);
+        const cp = this.chaser.root.position;
+        this.particles.footDust(cp.x, 0, cp.z, 3);
         this.shake = Math.max(this.shake, 0.06 * vol);
       }
     };
@@ -388,7 +429,7 @@ export class Game {
     this.renderer.hit(1.2);
     this.audio.stumble();
     this.player.play('stumble');
-    this.particles.sparkle(this.x, this.y + 1, 0, [1, 0.85, 0.4], 40);
+    this.particles.sparkle(this.pw.x, this.y + 1, this.pw.z, [1, 0.85, 0.4], 40);
     this.ui.flashWhite(0.35);
     this.ui.toast('LE DOSSIER T\'A SAUVÉ !', false, 1400);
     this.refreshDossier();
@@ -421,19 +462,26 @@ export class Game {
     this.dossier.clear();
     this.shield = false;
     this.zone = 'street';
+    this.path.reset();
+    this.segIdx = this.path.segIndexAt(this.dist);
+    this.turnQueued = 0;
+    this.yaw = this.camYaw = this.path.yawOf(this.path.segs[this.segIdx]);
+    this.cornerAnnounced = -1;
+    this.cornersSeen = 0;
+    this.falling = false;
+    this.skipCaught = false;
+    this.path.posOn(this.path.segs[this.segIdx], this.dist, 0, this.pw);
     this.tutorialStep = 0;
     this.world.reset(this.dist);
-    this.campus.reset();
     this.track.reset(this.dist);
-    this.campus.group.position.z = this.dist;
     this.player.play('idle');
     this.player.setSuperSneakers(false);
-    this.player.root.position.set(0, 0, 0);
-    this.player.root.rotation.set(0, 0, 0);
+    this.player.root.position.copy(this.pw);
+    this.player.root.rotation.set(0, this.yaw, 0);
     this.chaser.play('idle');
     this.chaser.setAngry(0);
-    this.chaser.root.position.set(this.chaserX, 0, this.chaserDist);
-    this.chaser.root.rotation.set(0, 0, 0);
+    this.path.pos(this.dist - this.chaserDist, this.chaserX, this.chaser.root.position);
+    this.chaser.root.rotation.set(0, this.yaw, 0);
     this.ui.resetHud();
     this.ui.hud(0, 0, 1, false);
     this.refreshDossier();
@@ -534,6 +582,18 @@ export class Game {
     if (this.state !== 'playing' && !(this.state === 'intro' && this.stateTime > 0.7)) return;
     if (a === 'left' || a === 'right') {
       const dir = a === 'left' ? -1 : 1;
+      // Pres d'un carrefour, le geste lateral sert a tourner.
+      const seg = this.path.segs[this.segIdx];
+      if (this.dist > seg.s1 - TURN_WINDOW && !this.turnQueued) {
+        if (dir === seg.turn) {
+          this.turnQueued = dir;
+          this.audio.swish();
+          return;
+        }
+        // Mauvais cote : on se cogne contre la bordure.
+        this.shake = Math.max(this.shake, 0.1);
+        return;
+      }
       const next = this.lane + dir;
       if (next < -1 || next > 1) {
         // Heurte le bord : petite secousse.
@@ -630,7 +690,8 @@ export class Game {
       case 'paused':
         break;
     }
-    if (this.state !== 'paused' && this.state !== 'countdown') this.particles.update(dt, this.state === 'playing' || this.state === 'intro' || this.state === 'caught' ? this.speed * dt : 0);
+    if (this.state !== 'paused' && this.state !== 'countdown') this.particles.update(dt, 0);
+    this.followSun();
     this.updateCamera(realDt);
     const cam = this.camera;
     this.particles.setViewportHeight(this.canvas.height / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))) / 0.9);
@@ -638,9 +699,8 @@ export class Game {
   }
 
   private updateMenu(dt: number) {
-    this.player.update(dt, 0, 0, 0, 0, 0);
-    this.chaser.update(dt, 0);
-    this.campus.update(dt, 0);
+    this.path.posOn(this.path.segs[this.segIdx], this.dist, this.x, this.pw, 0);
+    this.placeActors(dt, 0, false);
   }
 
   private updateIntro(dt: number) {
@@ -689,16 +749,25 @@ export class Game {
   private simulate(dt: number) {
     this.prevDist = this.dist;
     this.prevX = this.x;
-    const dz = this.speed * dt;
-    this.dist += dz;
+    this.dist += this.speed * dt;
 
     // Changement de voie avec easing.
-    if (this.laneT < 1) {
-      this.laneT = Math.min(1, this.laneT + dt / PLAYER.laneChangeTime);
-    }
+    if (this.laneT < 1) this.laneT = Math.min(1, this.laneT + dt / PLAYER.laneChangeTime);
     const tx = laneX(this.lane);
     this.x = lerp(this.laneFromX, tx, easeOutCubic(this.laneT));
     this.lean = damp(this.lean, (tx - this.x) * -0.5, 12, dt);
+
+    // Virage : au passage du coin si le geste a ete fait, sinon le mur.
+    let seg = this.path.segs[this.segIdx];
+    this.path.ensure(this.dist);
+    if (this.turnQueued && this.dist >= seg.s1) {
+      this.performTurn();
+      seg = this.path.segs[this.segIdx];
+    } else if (!this.turnQueued && this.dist > seg.s1 + J - 1.1) {
+      this.onWall();
+      return;
+    }
+    this.announceCorner(seg);
 
     // Vertical.
     const ground = this.track.groundAt(this.x, this.dist, this.y);
@@ -713,7 +782,7 @@ export class Game {
         this.grounded = true;
         if (impact > 8) {
           this.audio.land();
-          this.particles.footDust(this.x, this.y, 0.1, 6);
+          this.particles.footDust(this.pw.x, this.y, this.pw.z, 6);
           this.shake = Math.max(this.shake, Math.min(0.12, impact * 0.004));
         }
         if (this.slideQueued) {
@@ -731,8 +800,8 @@ export class Game {
       this.grounded = true;
     }
 
-    // Plafond des couloirs.
-    const zone = zoneAt(this.dist);
+    // Plafond des couloirs et annonce de zone.
+    const zone = this.path.zoneAt(this.dist);
     if (zone === 'corridor') {
       const hNow = this.slideTimer > 0 ? PLAYER.slideHeight : PLAYER.height;
       const maxY = CORRIDOR_CEIL - 0.15 - hNow;
@@ -752,6 +821,9 @@ export class Game {
     }
     if (this.player.anim === 'stumble' && this.player.animTime > 0.55) this.player.play('run');
 
+    // Position monde du joueur (le troncon courant est prolonge s'il n'a pas tourne).
+    this.path.posOn(seg, this.dist, this.x, this.pw, this.y);
+
     // Collisions.
     const height = this.slideTimer > 0 ? PLAYER.slideHeight : PLAYER.height;
     const hit = this.track.collide({ x: this.x, prevX: this.prevX, y: this.y, height, dist: this.dist, prevDist: this.prevDist });
@@ -759,13 +831,16 @@ export class Game {
       this.onCrash(hit.type);
       return;
     }
+    if (hit.kind === 'fall') {
+      this.onFall();
+      return;
+    }
     if (hit.kind === 'stumble') this.onStumble(hit.fromX);
 
     this.track.update(dt, this.dist, this.speed);
-    this.track.updateCoins(dt, this.dist, this.x, this.y, this.timers.magnet > 0);
+    this.track.updateCoins(dt, this.dist, this.x, this.y, this.timers.magnet > 0, this.pw);
     this.track.checkPowerUps(this.dist, this.x, this.y);
-    this.world.update(this.dist);
-    this.campus.update(dt, dz);
+    this.world.update(this.dist, this.pw.x, this.pw.z);
 
     // Gardien.
     if (this.warn > 0) this.warn -= dt;
@@ -779,17 +854,110 @@ export class Game {
     this.audio.setIntensity(this.warn > 0 ? 1 : 0);
     this.ui.setDanger(this.warn > 0);
 
-    // Affichage acteurs.
-    this.player.root.position.set(this.x, this.y, 0);
-    this.player.update(dt, this.speed, this.y, ground, this.vy, this.lean);
-    this.chaser.root.position.set(this.chaserX, 0, this.chaserDist);
-    // Masque quand il traverserait la camera.
+    this.placeActors(dt, ground, true);
+    // Masque le Gardien quand il traverserait la camera.
     this.chaser.root.visible = this.chaserDist < 4.7;
-    this.chaser.update(dt, this.speed);
 
-    if (this.shield && Math.random() < 0.5) this.particles.trail(this.x + (Math.random() - 0.5) * 0.8, this.y + 0.3 + Math.random() * 1.4, 0, [1, 0.8, 0.3]);
-    if (this.timers.sneakers > 0 && this.grounded) this.particles.trail(this.x, this.y + 0.08, 0.2, [0.1, 0.9, 0.8]);
-    if (this.timers.magnet > 0 && Math.random() < 0.4) this.particles.trail(this.x + (Math.random() - 0.5), this.y + 1 + Math.random(), 0, [1, 0.25, 0.35]);
+    const px = this.pw.x, pz = this.pw.z;
+    if (this.shield && Math.random() < 0.5) this.particles.trail(px + (Math.random() - 0.5) * 0.8, this.y + 0.3 + Math.random() * 1.4, pz, [1, 0.8, 0.3]);
+    if (this.timers.sneakers > 0 && this.grounded) this.particles.trail(px, this.y + 0.08, pz, [0.1, 0.9, 0.8]);
+    if (this.timers.magnet > 0 && Math.random() < 0.4) this.particles.trail(px + (Math.random() - 0.5), this.y + 1 + Math.random(), pz, [1, 0.25, 0.35]);
+  }
+
+  // Le soleil (et sa carte d'ombres) suit le joueur, cale sur la grille de texels.
+  private followSun() {
+    const f = this.path.segs[this.segIdx];
+    const t = this.tmpV.set(this.pw.x + f.dx * 14, 0, this.pw.z + f.dz * 14);
+    t.applyQuaternion(this.lightInvQ);
+    t.x = Math.round(t.x / this.texel) * this.texel;
+    t.y = Math.round(t.y / this.texel) * this.texel;
+    t.applyQuaternion(this.lightQ);
+    this.sun.target.position.copy(t);
+    this.sun.position.copy(t).addScaledVector(SUN_DIR, 110);
+    this.sun.target.updateMatrixWorld();
+    this.sun.updateMatrixWorld();
+    this.campus.group.visible = this.pw.lengthSq() < 300 * 300;
+  }
+
+  // Place joueur et Gardien dans le monde, orientes selon le chemin.
+  private placeActors(dt: number, ground: number, running: boolean) {
+    const seg = this.path.segs[this.segIdx];
+    const targetYaw = this.path.yawOf(seg);
+    this.yaw = dampAngle(this.yaw, targetYaw, 14, dt);
+    this.player.root.position.copy(this.pw);
+    this.player.root.rotation.y = this.yaw;
+    this.player.update(dt, running ? this.speed : 0, this.y, ground, this.vy, this.lean);
+    // Le Gardien suit le chemin derriere le joueur.
+    const cs = this.dist - this.chaserDist;
+    const cseg = cs >= seg.s0 ? seg : this.path.segAt(cs);
+    this.path.posOn(cseg, cs, this.chaserX, this.chaser.root.position);
+    this.chaser.root.rotation.y = dampAngle(this.chaser.root.rotation.y, this.path.yawOf(cseg), 8, dt);
+    this.chaser.update(dt, running ? this.speed : 0);
+    const f = this.path.segs[this.segIdx];
+    this.particles.setBack(-f.dx, -f.dz);
+  }
+
+  // Bascule sur le troncon suivant sans saut de position : on exprime la
+  // position courante dans le repere du nouveau troncon.
+  private performTurn() {
+    const seg = this.path.segs[this.segIdx];
+    const next = this.path.segs[this.segIdx + 1];
+    const c = this.path.posOn(seg, seg.s1, 0, new THREE.Vector3());
+    const p = this.path.posOn(seg, this.dist, this.x, new THREE.Vector3());
+    const rx = p.x - c.x, rz = p.z - c.z;
+    const along = next.dx * rx + next.dz * rz;
+    const lat = -next.dz * rx + next.dx * rz;
+    this.segIdx++;
+    this.dist = this.prevDist = next.s0 + along;
+    this.x = this.prevX = lat;
+    this.lane = 0;
+    this.laneFromX = lat;
+    this.laneT = 0;
+    this.turnQueued = 0;
+    this.cornerAnnounced = -1;
+    this.ui.turnHint(0);
+    this.shake = Math.max(this.shake, 0.05);
+  }
+
+  // Annonce visuelle du virage (fleche) pour les premiers carrefours.
+  private announceCorner(seg: { i: number; s1: number; turn: number }) {
+    if (this.state !== 'playing' || this.turnQueued) return;
+    if (this.dist > seg.s1 - 48 && this.cornerAnnounced !== seg.i) {
+      this.cornerAnnounced = seg.i;
+      this.cornersSeen++;
+      if (this.cornersSeen <= 3) this.ui.turnHint(seg.turn);
+    }
+  }
+
+  private onWall() {
+    if (this.useShield()) {
+      // Le dossier sauve aussi du mur : virage force.
+      this.turnQueued = this.path.segs[this.segIdx].turn;
+      this.performTurn();
+      return;
+    }
+    this.audio.crash();
+    this.renderer.hit(2.2);
+    this.shake = 0.6;
+    this.hitStop = 0.18;
+    this.ui.flashWhite(0.5);
+    this.particles.impact(this.pw.x, this.y + 0.5, this.pw.z, 30, true);
+    this.ui.turnHint(0);
+    this.caught('Tu as foncé dans le mur au lieu de tourner.');
+  }
+
+  private onFall() {
+    if (this.useShield()) {
+      // Rebond hors du caniveau.
+      this.vy = PLAYER.jumpVelocity * 0.8;
+      this.grounded = false;
+      this.player.play('jump');
+      return;
+    }
+    this.audio.crash();
+    this.shake = 0.4;
+    this.falling = true;
+    this.caught('Tu es tombé dans un caniveau ouvert.');
   }
 
   private onStumble(fromX: number) {
@@ -800,7 +968,7 @@ export class Game {
     this.shake = 0.3;
     this.renderer.hit(1);
     this.audio.stumble();
-    this.particles.impact(this.x, this.y, 0, 12);
+    this.particles.impact(this.pw.x, this.y, this.pw.z, 12);
     if (this.warn > 0) {
       if (this.useShield()) return;
       this.caught('Deux faux pas, le Gardien t\'a rattrapé.');
@@ -834,12 +1002,14 @@ export class Game {
     this.shake = 0.6;
     this.hitStop = 0.18;
     this.ui.flashWhite(0.5);
-    this.particles.impact(this.x, this.y + 0.5, -0.5, 30, true);
+    this.particles.impact(this.pw.x, this.y + 0.5, this.pw.z, 30, true);
     this.caught(reasons[type] ?? 'Le Gardien t\'a ramené en amphi.');
   }
 
   private caught(reason: string) {
     this.caughtReason = reason;
+    this.skipCaught = false;
+    this.ui.turnHint(0);
     this.chaserDist = Math.min(this.chaserDist, 5.5);
     this.state = 'caught';
     this.stateTime = 0;
@@ -853,34 +1023,32 @@ export class Game {
 
   private updateCaught(dt: number) {
     const t = this.stateTime;
-    // Decelation rapide.
+    // Decelation rapide (le monde est fixe, seul le joueur glisse).
     this.speed = damp(this.speed, 0, 5, dt);
-    const dz = this.speed * dt;
-    this.dist += dz;
+    this.dist += this.speed * dt;
     this.track.update(dt, this.dist, 0);
-    this.track.updateCoins(dt, this.dist, this.x, this.y, false);
-    this.world.update(this.dist);
-    this.campus.update(dt, dz);
-    // Retombe au sol si en l'air.
-    const ground = this.track.groundAt(this.x, this.dist, this.y);
+    this.track.updateCoins(dt, this.dist, this.x, this.y, false, this.pw);
+    this.world.update(this.dist, this.pw.x, this.pw.z);
+    const seg = this.path.segs[this.segIdx];
+    let ground = this.track.groundAt(this.x, this.dist, this.y);
+    if (this.falling) ground = -1.6; // au fond du caniveau
     if (this.y > ground) {
       this.vy -= PLAYER.gravity * dt;
       this.y = Math.max(ground, this.y + this.vy * dt);
     }
-    this.player.root.position.set(this.x, this.y, 0);
-    this.player.update(dt, 0, this.y, ground, this.vy, 0);
-    // Le gardien arrive et saisit le fuyard.
-    this.chaserDist = damp(this.chaserDist, 1.5, 3.2, dt);
+    this.path.posOn(seg, this.dist, this.x, this.pw, this.y);
+    // Le Gardien arrive et saisit le fuyard, puis danse sa victoire.
+    this.chaserDist = damp(this.chaserDist, 1.6, 3.2, dt);
     this.chaserX = damp(this.chaserX, this.x, 4, dt);
     this.chaser.root.visible = true;
-    this.chaser.root.position.set(this.chaserX, 0, this.chaserDist);
     if (t > 1.1 && this.chaser.anim !== 'victory') {
       this.chaser.play('victory');
       this.audio.roar();
       this.shake = 0.25;
     }
-    this.chaser.update(dt, this.speed);
-    if (t > 2.1) this.finish();
+    this.placeActors(dt, ground, false);
+    // Laisser le temps d'apprecier la danse ; un toucher permet d'abreger.
+    if (t > CAUGHT_TIME || (t > 1.6 && this.skipCaught)) this.finish();
   }
 
   private finish() {
@@ -898,9 +1066,7 @@ export class Game {
   }
 
   private updateOver(dt: number) {
-    this.player.update(dt, 0, this.y, this.y, 0, 0);
-    this.chaser.update(dt, 0);
-    this.campus.update(dt, 0);
+    this.placeActors(dt, this.falling ? -1.6 : this.y, false);
   }
 
   private updateCountdown(dt: number) {
@@ -960,18 +1126,28 @@ export class Game {
     return { pos, look };
   }
 
+  // Poses de camera exprimees dans le repere du joueur (origine sur l'axe de
+  // la route a sa hauteur de piste, -z vers l'avant), converties en monde
+  // avec un lacet lisse : la camera pivote en douceur dans les virages.
+  private toWorld(v: THREE.Vector3, origin: THREE.Vector3): THREE.Vector3 {
+    return v.applyAxisAngle(Y_AXIS, this.camYaw).add(origin);
+  }
+
   private updateCamera(dt: number) {
     const s = this.state;
     let pos: THREE.Vector3, look: THREE.Vector3;
     let fovBoost = 0;
+    const seg = this.path.segs[this.segIdx];
+    this.camYaw = s === 'menu' || s === 'story' ? this.path.yawOf(seg) : dampAngle(this.camYaw, this.path.yawOf(seg), 4.5, dt);
+    const origin = this.path.posOn(seg, this.dist, 0, new THREE.Vector3());
     if (s === 'story') {
       ({ pos, look } = this.shotPose(this.shot, this.shotTime));
-      this.camPos.lerp(pos, 1 - Math.exp(-dt * 4));
-      this.camLook.lerp(look, 1 - Math.exp(-dt * 4));
+      this.camPos.lerp(this.toWorld(pos, origin), 1 - Math.exp(-dt * 4));
+      this.camLook.lerp(this.toWorld(look, origin), 1 - Math.exp(-dt * 4));
     } else if (s === 'menu') {
       ({ pos, look } = this.menuCamera(this.stateTime));
-      this.camPos.lerp(pos, 1 - Math.exp(-dt * 3));
-      this.camLook.lerp(look, 1 - Math.exp(-dt * 3));
+      this.camPos.lerp(this.toWorld(pos, origin), 1 - Math.exp(-dt * 3));
+      this.camLook.lerp(this.toWorld(look, origin), 1 - Math.exp(-dt * 3));
     } else if (s === 'intro') {
       const m = this.menuCamera(0);
       const p = this.playCamera();
@@ -983,25 +1159,29 @@ export class Game {
       const r = lerp(r0, r1, k) - Math.sin(k * Math.PI) * 2.2;
       pos = new THREE.Vector3(this.x + Math.sin(ang) * r, lerp(m.pos.y, p.pos.y, k), Math.cos(ang) * r);
       look = m.look.clone().lerp(p.look, k);
-      this.camPos.copy(pos);
-      this.camLook.copy(look);
+      this.camPos.copy(this.toWorld(pos, origin));
+      this.camLook.copy(this.toWorld(look, origin));
     } else if (s === 'caught' || s === 'over') {
-      const t = s === 'caught' ? this.stateTime : 2.1 + this.stateTime;
-      const ang = lerp(0, Math.PI * 0.62, easeInOutCubic(clamp(t / 1.8, 0, 1))) + (s === 'over' ? this.stateTime * 0.05 : 0);
-      const r = lerp(6.2, 7.8, clamp(t / 1.8, 0, 1));
+      // Travelling autour du Gardien qui danse, puis lente orbite.
+      const t = s === 'caught' ? this.stateTime : CAUGHT_TIME + this.stateTime;
+      const ang = lerp(0, Math.PI * 0.75, easeInOutCubic(clamp(t / 2.4, 0, 1))) + Math.max(0, t - 2.4) * 0.12;
+      const r = lerp(6.2, 6.8, clamp(t / 2.4, 0, 1));
       const cx = this.x;
-      pos = new THREE.Vector3(cx + Math.sin(ang) * r, lerp(3.6, 2.6, clamp(t / 1.8, 0, 1)) + this.y, Math.cos(ang) * r);
-      look = new THREE.Vector3(cx, 1.2 + this.y * 0.5, lerp(-7, 1.0, clamp(t / 1.2, 0, 1)));
-      this.camPos.lerp(pos, 1 - Math.exp(-dt * 6));
-      this.camLook.lerp(look, 1 - Math.exp(-dt * 6));
+      const cz = this.chaserDist * 0.5;
+      pos = new THREE.Vector3(cx + Math.sin(ang) * r, lerp(3.6, 2.3, clamp(t / 2.4, 0, 1)) + Math.max(0, this.y) * 0.5, cz + Math.cos(ang) * r);
+      look = new THREE.Vector3(cx, 1.3 + Math.max(0, this.y) * 0.5, lerp(-7, cz, clamp(t / 1.2, 0, 1)));
+      this.camPos.lerp(this.toWorld(pos, origin), 1 - Math.exp(-dt * 5));
+      this.camLook.lerp(this.toWorld(look, origin), 1 - Math.exp(-dt * 5));
     } else {
       ({ pos, look } = this.playCamera());
-      this.camPos.x = damp(this.camPos.x, pos.x, 7, dt);
+      this.toWorld(pos, origin);
+      this.toWorld(look, origin);
+      this.camPos.x = damp(this.camPos.x, pos.x, 8, dt);
       this.camPos.y = damp(this.camPos.y, pos.y, 5, dt);
-      this.camPos.z = damp(this.camPos.z, pos.z, 5, dt);
-      this.camLook.x = damp(this.camLook.x, look.x, 9, dt);
+      this.camPos.z = damp(this.camPos.z, pos.z, 8, dt);
+      this.camLook.x = damp(this.camLook.x, look.x, 10, dt);
       this.camLook.y = damp(this.camLook.y, look.y, 6, dt);
-      this.camLook.z = damp(this.camLook.z, look.z, 6, dt);
+      this.camLook.z = damp(this.camLook.z, look.z, 10, dt);
       fovBoost = ((this.speed - SPEED.start) / (SPEED.max - SPEED.start)) * 7 + (this.timers.sneakers > 0 && !this.grounded ? 4 : 0);
     }
 
@@ -1011,7 +1191,7 @@ export class Game {
     this.camera.position.set(
       this.camPos.x + Math.sin(t * 43) * sh * 0.9,
       this.camPos.y + Math.sin(t * 57 + 1) * sh * 0.9,
-      this.camPos.z,
+      this.camPos.z + Math.sin(t * 37 + 2) * sh * 0.5,
     );
     this.camera.lookAt(this.camLook);
     const targetFov = this.baseFov + fovBoost;
@@ -1019,6 +1199,9 @@ export class Game {
       this.camera.fov = damp(this.camera.fov, targetFov, 3, dt);
       this.camera.updateProjectionMatrix();
     }
+    // Ciel et silhouette lointaine suivent la camera.
+    this.sky.position.copy(this.camera.position);
+    this.skyline.position.set(this.camera.position.x, 0, this.camera.position.z);
     // Liseré lumineux plus fort en menu (contre-jour flatteur).
     rimUniform.value.setRGB(1, 0.78, 0.56).multiplyScalar(s === 'menu' || s === 'over' ? 0.4 : 0.6);
   }

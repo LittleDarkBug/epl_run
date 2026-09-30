@@ -14,6 +14,7 @@ import {
 const L = WORLD.blockLength;
 export const CORRIDOR_HALF = 4.6;
 export const CORRIDOR_CEIL = 5.0;
+const TRIM_LEN = 16;
 
 const WALL = '#efdca6';
 const WAINSCOT = '#2f7fb8';
@@ -63,7 +64,7 @@ function plane(material: THREE.Material, w: number, h: number, x: number, y: num
 
 export type CorridorPart = 'body' | 'in' | 'out';
 
-export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages): { geo: THREE.BufferGeometry; extras: THREE.Object3D[] } {
+export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages, trimSide = 0): { geo: THREE.BufferGeometry; extras: THREE.Object3D[] } {
   const b = new GeoBuilder();
   const extras: THREE.Object3D[] = [];
   const D = decals(img);
@@ -118,10 +119,11 @@ export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages): { ge
     for (let k = 0; k < 6; k++) b.add(UNIT.box, mat(xl, (1.1 + H - 0.8) / 2, z - (bay - 0.5) / 2 + (k + 0.5) * ((bay - 0.5) / 6), 0, 0, 0, 0.05, H - 1.9, 0.05), '#3b3f45', { r: 0.45, m: 0.6 });
     for (const yy of [2.2, 3.3]) b.add(UNIT.box, mat(xl, yy, z, 0, 0, 0, 0.04, 0.04, bay - 0.5), '#3b3f45', { r: 0.4, m: 0.7 });
   }
-  // Exterieur visible par les fenetres.
-  b.add(UNIT.box, mat(-W - 6, 0.08, 0, 0, 0, 0, 11, 0.16, L), '#5f8f3a', { r: 1 });
-  for (let i = 0; i < 3; i++) addPalm(b, -W - range(r, 3, 8), 0.1, z0 - range(r, 3, L - 3), range(r, 6.5, 9), r);
-  for (let i = 0; i < 4; i++) addBush(b, -W - range(r, 1.2, 3), 0.1, z0 - range(r, 1, L - 1), range(r, 0.8, 1.2), r);
+  // Exterieur visible par les fenetres (degage au debut si virage a gauche).
+  const ext0 = trimSide === -1 ? TRIM_LEN : 0;
+  b.add(UNIT.box, mat(-W - 3.4, 0.08, -ext0 / 2, 0, 0, 0, 6, 0.16, L - ext0), '#5f8f3a', { r: 1 });
+  for (let i = 0; i < 3; i++) addPalm(b, -W - range(r, 3, 6), 0.1, z0 - ext0 - range(r, 3, L - ext0 - 3), range(r, 6.5, 9), r);
+  for (let i = 0; i < 4; i++) addBush(b, -W - range(r, 1.2, 3), 0.1, z0 - ext0 - range(r, 1, L - ext0 - 1), range(r, 0.8, 1.2), r);
 
   // Mur droit : casiers, portes de salles, panneaux d'affichage.
   const xr = W + 0.15;
@@ -173,6 +175,11 @@ export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages): { ge
     const fz = z0;
     const fw = 26;
     for (const s of [-1, 1]) {
+      if (s === trimSide) {
+        // Cote interieur du virage : les facades du coin prennent le relais.
+        b.add(UNIT.box, mat(s * (W + 1.5), 6, fz, 0, 0, 0, 3, 12, 0.6), WALL, { r: 0.85 });
+        continue;
+      }
       b.add(UNIT.box, mat(s * (W + fw / 2), 6, fz, 0, 0, 0, fw, 12, 0.6), WALL, { r: 0.85 });
       b.add(UNIT.box, mat(s * (W + fw / 2), 1.0, fz + 0.32, 0, 0, 0, fw, 2.0, 0.05), WAINSCOT, { r: 0.55 });
       // Masse du batiment.
@@ -189,8 +196,7 @@ export function buildCorridor(r: Rng, part: CorridorPart, img: ZoneImages): { ge
     b.add(UNIT.box, mat(0, H + 0.2, fz + 0.4, 0, 0, 0, W * 2 + 0.8, 0.4, 0.3), '#1446a0', { r: 0.5 });
     const sign = pick(r, D.sign);
     extras.push(plane(sign, 7.2, 2.1, 0, H + 1.8, fz + 0.32, 0));
-    extras.push(plane(D.poster, 3.2, 2.25, -W - 5, 6.5, fz + 0.32, 0));
-    extras.push(plane(D.poster, 3.2, 2.25, W + 5, 6.5, fz + 0.32, 0));
+    for (const s of [-1, 1]) if (s !== trimSide) extras.push(plane(D.poster, 3.2, 2.25, s * (W + 5), 6.5, fz + 0.32, 0));
   }
   if (part === 'out') {
     // Mur de sortie (vu de l'interieur : ouverture lumineuse).
@@ -221,7 +227,7 @@ function flamboyant(b: GeoBuilder, x: number, z: number, r: Rng) {
   }
 }
 
-export function buildCourt(r: Rng, part: CourtPart, img: ZoneImages): { geo: THREE.BufferGeometry; extras: THREE.Object3D[] } {
+export function buildCourt(r: Rng, part: CourtPart, img: ZoneImages, trimSide = 0): { geo: THREE.BufferGeometry; extras: THREE.Object3D[] } {
   const b = new GeoBuilder();
   const extras: THREE.Object3D[] = [];
   const D = decals(img);
@@ -232,19 +238,20 @@ export function buildCourt(r: Rng, part: CourtPart, img: ZoneImages): { geo: THR
     // Accotement en laterite puis herbe seche.
     b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 3.35), 0.085, 0, 0, 0, 0, 6, 0.17, L), '#b0603a', { r: 1 });
     b.add(UNIT.box, mat(side * (SIDEWALK_OUT + 14), 0.09, 0, 0, 0, 0, 16, 0.18, L), '#8d9a4a', { r: 1 });
+    const t0 = side === trimSide ? TRIM_LEN : 0;
     // Arbres d'ombrage, quelques flamboyants et palmiers.
-    addShadeTree(b, side * (SIDEWALK_OUT + range(r, 1.5, 4)), 0.2, z0 - range(r, 3, 12), r, range(r, 0.9, 1.2));
+    addShadeTree(b, side * (SIDEWALK_OUT + range(r, 1.5, 4)), 0.2, z0 - t0 - range(r, 3, 12), r, range(r, 0.9, 1.2));
     if (r() < 0.8) addShadeTree(b, side * (SIDEWALK_OUT + range(r, 2, 5)), 0.2, z0 - range(r, 20, 32), r, range(r, 0.8, 1.1));
-    if (r() < 0.4) flamboyant(b, side * (SIDEWALK_OUT + range(r, 8, 11)), z0 - range(r, 10, 26), r);
-    if (r() < 0.3) addPalm(b, side * (SIDEWALK_OUT + 1.2), 0.2, z0 - range(r, 14, 20), range(r, 7, 9), r);
+    if (r() < 0.4) flamboyant(b, side * (SIDEWALK_OUT + range(r, 8, 11)), z0 - Math.max(t0 + 4, range(r, 10, 26)), r);
+    if (r() < 0.3) addPalm(b, side * (SIDEWALK_OUT + 1.2), 0.2, z0 - Math.max(t0 + 1.5, range(r, 14, 20)), range(r, 7, 9), r);
     // Voitures et motos garees sur la laterite.
     const nCars = Math.floor(r() * 3);
     for (let k = 0; k < nCars; k++) {
-      const cz = z0 - range(r, 4, L - 4);
+      const cz = z0 - t0 - range(r, 4, L - t0 - 4);
       addCar(b, new THREE.Matrix4().makeTranslation(side * (SIDEWALK_OUT + 2.8), 0.2, cz).multiply(new THREE.Matrix4().makeRotationY(range(r, -0.15, 0.15))), pick(r, CAR_COLORS));
     }
     if (r() < 0.5) {
-      const mz = z0 - range(r, 5, L - 10);
+      const mz = z0 - t0 - range(r, 5, L - t0 - 10);
       for (let k = 0; k < 6; k++) {
         addMoto(b, new THREE.Matrix4().makeTranslation(side * (SIDEWALK_OUT + 1.6), 0.2, mz - k * 0.95).multiply(new THREE.Matrix4().makeRotationY(side * 1.35)),
           pick(r, ['#1e1e1e', '#b91c1c', '#1d4ed8', '#6b7280']), r() < 0.3);
@@ -253,7 +260,7 @@ export function buildCourt(r: Rng, part: CourtPart, img: ZoneImages): { geo: THR
     // Batiment jaune de l'universite, facade tournee vers la route.
     const xf = side * (SIDEWALK_OUT + 10);
     const len = L - 6;
-    if (r() < 0.8) {
+    if (r() < 0.8 && side !== trimSide) {
       const base = side > 0
         ? new THREE.Matrix4().makeTranslation(xf, 0, z0 - 3).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2))
         : new THREE.Matrix4().makeTranslation(xf, 0, z0 - 3 - len).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2));

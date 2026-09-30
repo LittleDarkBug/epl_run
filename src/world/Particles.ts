@@ -12,11 +12,13 @@ const vert = /* glsl */ `
   void main() {
     vColor = aColor;
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    // Pres de la camera, la particule s'efface (sinon enorme tache floue).
+    vColor.a *= smoothstep(2.5, 6.0, -mvPosition.z);
     float bz = min(mvPosition.z, 0.0);
     mvPosition.y -= uBend.y * bz * bz;
     mvPosition.x += uBend.x * bz * bz;
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * uScale / -mvPosition.z;
+    gl_PointSize = min(aSize * uScale / max(-mvPosition.z, 0.1), uScale * 0.12);
   }
 `;
 
@@ -114,6 +116,14 @@ export class Particles {
   readonly group = new THREE.Group();
   private dust: Pool;
   private glow: Pool;
+  // Direction "vers l'arriere" du joueur (la poussiere part derriere lui).
+  private bx = 0;
+  private bz = 1;
+
+  setBack(x: number, z: number) {
+    this.bx = x;
+    this.bz = z;
+  }
 
   constructor(sprite: THREE.Texture) {
     this.dust = new Pool(500, sprite, false);
@@ -130,7 +140,7 @@ export class Particles {
     for (let i = 0; i < amount; i++) {
       this.dust.spawn({
         x: x + (Math.random() - 0.5) * 0.3, y: y + 0.05, z: z + (Math.random() - 0.5) * 0.3,
-        vx: (Math.random() - 0.5) * 1.5, vy: Math.random() * 1.2 + 0.3, vz: 2 + Math.random() * 2,
+        vx: (Math.random() - 0.5) * 1.5 + this.bx * (2 + Math.random() * 2), vy: Math.random() * 1.2 + 0.3, vz: (Math.random() - 0.5) * 1.5 + this.bz * (2 + Math.random() * 2),
         life: 0, max: 0.6 + Math.random() * 0.5, size: 0.35, grow: 2.2,
         r: 0.78, g: 0.55, b: 0.4, a: 0.35, drag: 3, grav: -0.3, world: true,
       });

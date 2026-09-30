@@ -9,7 +9,7 @@ import { addCar, CAR_COLORS } from './Scenery';
 // Fabriques des obstacles. Chaque type est une geometrie fusionnee (1 appel
 // de rendu) avec quelques variantes de couleur.
 
-export type ObstacleType = 'barrier' | 'bench' | 'gate' | 'kiosk' | 'bus' | 'moto' | 'books' | 'board' | 'car' | 'steps' | 'stage' | 'copier' | 'chairs';
+export type ObstacleType = 'barrier' | 'bench' | 'gate' | 'kiosk' | 'bus' | 'moto' | 'books' | 'board' | 'car' | 'steps' | 'stage' | 'copier' | 'chairs' | 'ditch' | 'branch';
 
 export interface ObstacleSpec {
   len: number; // profondeur en z
@@ -20,6 +20,7 @@ export interface ObstacleSpec {
   ramp?: boolean;
   low?: boolean; // se franchit en sautant
   high?: boolean; // se franchit en glissant
+  pit?: boolean; // trou : il faut etre en l'air
 }
 
 export const STAGE_H = 1.15;
@@ -39,6 +40,8 @@ export const SPECS: Record<ObstacleType, ObstacleSpec> = {
   stage: { len: 11, halfW: 1.2, y0: 0, y1: STAGE_H, top: STAGE_H },
   copier: { len: 1.1, halfW: 0.8, y0: 0, y1: 1.45, top: 1.45 },
   chairs: { len: 0.8, halfW: 1.0, y0: 0, y1: 1.1, low: true },
+  ditch: { len: 2.2, halfW: 4.4, y0: -1, y1: 0, pit: true },
+  branch: { len: 0.6, halfW: 1.2, y0: 1.2, y1: 2.4, high: true },
 };
 
 const uber = createUberMaterial({ grime: 0.12 });
@@ -185,6 +188,41 @@ function bus(variant: number): THREE.Object3D {
     const z = -len / 2 + 1.2 + i * 1.9 + ((i * 37) % 5) * 0.1;
     const x = ((i * 53) % 3 - 1) * 0.5;
     b.add(UNIT.rboxSoft, mat(x, topY + 0.28, z, 0, i * 0.4, 0, 0.8, 0.36, 0.9), bags[(i + variant) % bags.length], { r: 0.8 });
+  }
+  return meshFrom(b);
+}
+
+// Caniveau ouvert en travers de la route (typique de Lome) : a sauter.
+function ditch(): THREE.Object3D {
+  const b = new GeoBuilder();
+  const W = 10.2, len = SPECS.ditch.len;
+  // Fond sombre, eau stagnante, levres en beton, dalles cassees.
+  b.add(UNIT.box, mat(0, 0.006, 0, 0, 0, 0, W, 0.012, len - 0.3), '#0b0c0e', { r: 0.9 });
+  b.add(UNIT.box, mat(0, 0.014, 0.1, 0, 0, 0, W - 0.4, 0.004, len - 0.9), '#2d3b36', { r: 0.05, m: 0.2 });
+  for (const s of [-1, 1]) b.add(UNIT.box, mat(0, 0.05, s * (len / 2 - 0.12), 0, 0, 0, W, 0.1, 0.24), '#9d9a92', { r: 0.9 });
+  for (let k = 0; k < 3; k++) {
+    const x = -3.5 + k * 3.4;
+    b.add(UNIT.box, mat(x, 0.07, len / 2 - 0.35, 0.15, 0.1 * k, 0, 0.9, 0.08, 0.5), '#8a877f', { r: 0.9 });
+  }
+  // Chevrons de chantier poses sur les bords.
+  for (const s of [-1, 1]) {
+    b.add(UNIT.cone, mat(s * 4.6, 0.35, len / 2 + 0.2, 0, 0, 0, 0.35, 0.7, 0.35), '#f97316', { r: 0.5 });
+    b.add(UNIT.cyl, mat(s * 4.6, 0.4, len / 2 + 0.2, 0, 0, 0, 0.27, 0.1, 0.27), '#f5f5f0', { r: 0.5 });
+  }
+  const m = meshFrom(b);
+  m.castShadow = false;
+  return m;
+}
+
+// Branche basse d'un grand arbre en travers de l'allee : glisser dessous.
+function branch(variant: number): THREE.Object3D {
+  const b = new GeoBuilder();
+  const bark = variant % 2 ? '#5e4230' : '#6b4a36';
+  b.add(UNIT.cylLow, mat(0, 1.55, 0, 0, 0, Math.PI / 2 + 0.08, 0.26, 3.2, 0.26), bark, { r: 0.95 });
+  b.add(UNIT.cylLow, mat(0.8, 1.75, 0.1, 0.4, 0, Math.PI / 2 - 0.5, 0.14, 1.2, 0.14), bark, { r: 0.95 });
+  for (let k = 0; k < 14; k++) {
+    const x = -1.3 + (k * 0.2) % 2.6;
+    b.add(UNIT.sphereLow, mat(x, 1.75 + ((k * 7) % 5) * 0.12, ((k * 5) % 3 - 1) * 0.25, 0, 0, 0, 0.55, 0.4, 0.5), ['#2f5e27', '#3b6f2c', '#467d31'][k % 3], { r: 0.85 });
   }
   return meshFrom(b);
 }
@@ -365,6 +403,8 @@ export function createObstacle(type: ObstacleType, variant: number): THREE.Objec
     }
     case 'kiosk': return kiosk(variant);
     case 'bus': return bus(variant);
+    case 'ditch': return ditch();
+    case 'branch': return branch(variant);
     case 'steps': return steps();
     case 'stage': return stage(variant);
     case 'copier': return copier(variant);
@@ -381,5 +421,5 @@ export function createObstacle(type: ObstacleType, variant: number): THREE.Objec
 }
 
 export const VARIANTS: Record<ObstacleType, number> = {
-  barrier: 2, bench: 2, gate: BANNERS.length, kiosk: 4, bus: 4, moto: 3, books: 3, board: 4, car: 7, steps: 1, stage: 2, copier: 2, chairs: 2,
+  barrier: 2, bench: 2, gate: BANNERS.length, kiosk: 4, bus: 4, moto: 3, books: 3, board: 4, car: 7, steps: 1, stage: 2, copier: 2, chairs: 2, ditch: 1, branch: 2,
 };

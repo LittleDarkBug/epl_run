@@ -63,13 +63,5 @@ export class Campus {
     this.group.add(mesh);
   }
 
-  update(_dt: number, dz: number) {
-    this.group.position.z += dz;
-    this.group.visible = this.group.position.z < 160;
-  }
 
-  reset() {
-    this.group.position.z = 0;
-    this.group.visible = true;
-  }
 }

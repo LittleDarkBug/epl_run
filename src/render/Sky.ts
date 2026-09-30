@@ -109,7 +109,7 @@ const skylineFrag = /* glsl */ `
   varying vec3 vDir;
   float hash(float x) { return fract(sin(x * 91.345 + uSeed) * 47453.5453); }
   void main() {
-    float cols = 260.0;
+    float cols = 520.0;
     float x = vUv.x * cols;
     float id = floor(x);
     float fx = fract(x);
@@ -156,7 +156,7 @@ export function createSkyline(): THREE.Group {
     { r: 520, h: 90, y: -22, color: '#5e4a78', top: '#8d6a8a', seed: 7.0, height: 0.55, win: 1.0 },
   ];
   for (const L of layers) {
-    const geo = new THREE.CylinderGeometry(L.r, L.r, L.h, 160, 1, true, Math.PI * 0.5, Math.PI);
+    const geo = new THREE.CylinderGeometry(L.r, L.r, L.h, 240, 1, true, 0, Math.PI * 2);
     const mat = new THREE.ShaderMaterial({
       vertexShader: skylineVert,
       fragmentShader: skylineFrag,

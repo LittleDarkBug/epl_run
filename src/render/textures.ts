@@ -85,7 +85,7 @@ export interface RoadTextures {
 // Route : 9 m de large (u) sur 18 m de long (v). L'albedo est en double
 // resolution pour des marquages nets ; relief et rugosite restent doux pour
 // eviter tout scintillement speculaire.
-export function makeRoadTextures(maxAniso: number): RoadTextures {
+export function makeRoadTextures(maxAniso: number, markings = true): RoadTextures {
   const W = 512, H = 1024;
   const pxPerM = W / 9;
   const n = fbm(W, H, 7, 4, 6);
@@ -167,10 +167,12 @@ export function makeRoadTextures(maxAniso: number): RoadTextures {
       rctx.fillRect((mx + 4.5) * pxPerM - width * pxPerM / 2, y / 2, width * pxPerM, (dash * S) / 2);
     }
   };
-  paint(-1.25, 0.14, 3, 3, 'rgba(232,230,220,0.9)');
-  paint(1.25, 0.14, 3, 3, 'rgba(232,230,220,0.9)');
-  paint(-4.05, 0.15, 18, 0, 'rgba(236,190,40,0.9)');
-  paint(4.05, 0.15, 18, 0, 'rgba(236,190,40,0.9)');
+  if (markings) {
+    paint(-1.25, 0.14, 3, 3, 'rgba(232,230,220,0.9)');
+    paint(1.25, 0.14, 3, 3, 'rgba(232,230,220,0.9)');
+    paint(-4.05, 0.15, 18, 0, 'rgba(236,190,40,0.9)');
+    paint(4.05, 0.15, 18, 0, 'rgba(236,190,40,0.9)');
+  }
 
   const map = new THREE.CanvasTexture(hc);
   map.colorSpace = THREE.SRGBColorSpace;

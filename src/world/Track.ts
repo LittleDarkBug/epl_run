@@ -3,7 +3,7 @@ import { createObstacle, ObstacleType, SPECS, VARIANTS } from './ObstacleMeshes'
 import { applyBend } from '../render/curve';
 import { LANE_WIDTH, PLAYER, WORLD, laneX } from '../config';
 import { clamp, pick } from '../core/rng';
-import { zoneAt, Zone } from './World';
+import { Path, Zone, J } from './Path';
 import { GeoBuilder, mat, UNIT } from '../render/GeoBuilder';
 
 // Generation procedurale du parcours, pieces, bonus et collisions.
@@ -53,18 +53,18 @@ export interface PlayerProbe {
   prevDist: number;
 }
 
-export type HitResult = { kind: 'none' } | { kind: 'crash'; type: ObstacleType } | { kind: 'stumble'; type: ObstacleType; fromX: number };
+export type HitResult = { kind: 'none' } | { kind: 'crash'; type: ObstacleType } | { kind: 'stumble'; type: ObstacleType; fromX: number } | { kind: 'fall' };
 
 const MAX_COINS = 260;
 
 // Obstacles coherents avec chaque lieu : la rue de Lome (vehicules, chantier,
 // kiosques), les couloirs (mobilier scolaire), le campus (estrade de remise
 // des diplomes, voitures garees, chaises d'amphi).
-interface ZoneSet { low: ObstacleType[]; high: ObstacleType[]; full: ObstacleType[]; stage: boolean; moto: boolean }
+interface ZoneSet { low: ObstacleType[]; high: ObstacleType[]; full: ObstacleType[]; stage: boolean; moto: boolean; ditch: boolean }
 const ZONE_SET: Record<Zone, ZoneSet> = {
-  street: { low: ['barrier', 'barrier', 'bench'], high: ['gate'], full: ['kiosk', 'car', 'bus'], stage: false, moto: true },
-  corridor: { low: ['books', 'chairs', 'bench'], high: ['gate'], full: ['board', 'copier'], stage: false, moto: false },
-  court: { low: ['bench', 'chairs', 'books', 'barrier'], high: ['gate'], full: ['car', 'kiosk', 'copier'], stage: true, moto: false },
+  street: { low: ['barrier', 'barrier', 'bench'], high: ['gate'], full: ['kiosk', 'car'], stage: false, moto: true, ditch: true },
+  corridor: { low: ['books', 'chairs', 'bench'], high: ['gate'], full: ['board', 'copier'], stage: false, moto: false, ditch: false },
+  court: { low: ['bench', 'chairs', 'books', 'barrier'], high: ['gate', 'branch'], full: ['car', 'kiosk', 'copier'], stage: true, moto: false, ditch: true },
 };
 
 // Couleurs des cahiers : bandes du logo EPL.
@@ -93,7 +93,7 @@ export class Track {
   onCoin: ((x: number, y: number, z: number) => void) | null = null;
   onPowerUp: ((t: BonusType, x: number, y: number, z: number) => void) | null = null;
 
-  constructor() {
+  constructor(private path: Path) {
     // Cahier a spirale : couverture teintee par instance + pages et spirale.
     const cover = new GeoBuilder();
     cover.add(UNIT.rbox, mat(0, 0, 0, 0, 0, 0, 0.52, 0.66, 0.09), '#ffffff', { r: 0.45 });
@@ -128,7 +128,7 @@ export class Track {
     for (let i = 0; i < MAX_COINS; i++) this.coinMesh.setColorAt(i, NOTEBOOK_COLORS[0]);
 
     // Pre-remplissage des pools pour eviter les saccades en jeu.
-    const warm: [ObstacleType, number][] = [['barrier', 6], ['bench', 4], ['gate', 3], ['kiosk', 4], ['bus', 4], ['moto', 2], ['books', 4], ['board', 3], ['car', 7], ['steps', 2], ['stage', 2], ['copier', 3], ['chairs', 3]];
+    const warm: [ObstacleType, number][] = [['barrier', 6], ['bench', 4], ['gate', 3], ['kiosk', 4], ['moto', 2], ['ditch', 3], ['branch', 3], ['books', 4], ['board', 3], ['car', 7], ['steps', 2], ['stage', 2], ['copier', 3], ['chairs', 3]];
     for (const [t, n] of warm) {
       for (let v = 0; v < VARIANTS[t]; v++) {
         const key = `${t}:${v}`;
@@ -203,8 +203,8 @@ export class Track {
     const d = clamp(dist / 3500, 0, 1);
     const lanes = [-1, 0, 1];
     const free = lanes.filter((l) => this.laneFree(l, s));
-    const Z = ZONE_SET[zoneAt(s)];
-    const zoneEnd = ZONE_SET[zoneAt(s + 32)];
+    const Z = ZONE_SET[this.path.zoneAt(s)];
+    const zoneEnd = ZONE_SET[this.path.zoneAt(s + 32)];
     const smallTypes: ObstacleType[] = [...Z.low, ...Z.high, ...Z.high, ...Z.full];
     const hop: ObstacleType[] = [...Z.low, ...Z.high];
     const r = Math.random();
@@ -227,6 +227,14 @@ export class Track {
         else this.coinLine(x, s, 8, 2.2, () => 1);
       }
       return sl + gl;
+    }
+
+    // Caniveau ouvert en travers de la route : a sauter, sinon on tombe.
+    if (r < 0.34 && Z.ditch && free.length === 3 && d > 0.03) {
+      this.add('ditch', 0, s);
+      const l = pick(Math.random, lanes);
+      this.coinArc(l, s + SPECS.ditch.len / 2);
+      return SPECS.ditch.len + 4;
     }
 
     // Moto-taxi en contresens.
@@ -311,6 +319,12 @@ export class Track {
     this.time += dt;
     // Generation.
     while (this.nextS < dist + WORLD.spawnAhead) {
+      const seg = this.path.segAt(this.nextS);
+      if (this.nextS > seg.s1 - 34) {
+        // Carrefour : on reprend apres le virage.
+        this.nextS = seg.s1 + J + 26;
+        continue;
+      }
       const used = this.generateRow(this.nextS, dist);
       const gap = clamp(30 - speed * 0.42, 15, 26) + Math.random() * 8;
       this.maybePowerUp(this.nextS + used + gap * 0.5);
@@ -322,13 +336,14 @@ export class Track {
       const o = this.obstacles[i];
       o.prevS = o.s;
       if (o.vel) o.s -= o.vel * dt;
-      const zc = dist - (o.s + o.len / 2);
-      if (zc > WORLD.keepBehind) {
+      if (o.s + o.len < dist - WORLD.keepBehind) {
         this.release(o);
         this.obstacles.splice(i, 1);
         continue;
       }
-      o.obj.position.set(o.x, 0, zc);
+      const sc = o.s + o.len / 2;
+      this.path.pos(sc, o.x, o.obj.position);
+      o.obj.rotation.set(0, this.path.yawAt(sc), 0);
       if (o.type === 'moto') {
         o.obj.rotation.z = Math.sin(this.time * 7 + o.s) * 0.03;
         o.obj.position.y = Math.abs(Math.sin(this.time * 20)) * 0.02;
@@ -338,20 +353,21 @@ export class Track {
     // Bonus.
     for (let i = this.powerups.length - 1; i >= 0; i--) {
       const p = this.powerups[i];
-      const z = dist - p.s;
-      if (z > WORLD.keepBehind || !p.alive) {
+      if (p.s < dist - WORLD.keepBehind || !p.alive) {
         this.group.remove(p.obj);
         this.puPools.get(p.type)!.push(p.obj);
         this.powerups.splice(i, 1);
         continue;
       }
-      p.obj.position.set(p.x, p.y + Math.sin(this.time * 3 + p.s) * 0.15, z);
+      this.path.pos(p.s, p.x, p.obj.position, p.y + Math.sin(this.time * 3 + p.s) * 0.15);
       p.obj.rotation.y = this.time * 2;
     }
   }
 
   // Pieces : aimantation, collecte, rendu instancie.
-  updateCoins(dt: number, dist: number, px: number, py: number, magnet: boolean) {
+  // Cahiers : aimantation (en coordonnees monde), collecte, rendu instancie.
+  // (px, py) : position laterale et hauteur du joueur ; pw : sa position monde.
+  updateCoins(dt: number, dist: number, px: number, py: number, magnet: boolean, pw: THREE.Vector3) {
     let n = 0;
     const spin = this.time * 4;
     for (let i = this.coins.length - 1; i >= 0; i--) {
@@ -360,36 +376,38 @@ export class Track {
         this.coins.splice(i, 1);
         continue;
       }
-      let z = dist - c.s;
-      if (z > 12) {
+      const ahead = c.s - dist;
+      if (ahead < -12) {
         this.coins.splice(i, 1);
         continue;
       }
-      if (z < -WORLD.visibleAhead) continue;
-      let x = c.x, y = c.y;
-      if (magnet && !c.flying && z > -30 && z < 1) {
+      if (ahead > WORLD.visibleAhead) continue;
+      if (magnet && !c.flying && ahead < 30 && ahead > -1) {
+        this.path.pos(c.s, c.x, tmpP, c.y);
         c.flying = true;
-        c.fx = x; c.fy = y; c.fz = z;
+        c.fx = tmpP.x; c.fy = tmpP.y; c.fz = tmpP.z;
       }
       if (c.flying) {
         const k = 1 - Math.exp(-dt * 14);
-        c.fx += (px - c.fx) * k;
+        c.fx += (pw.x - c.fx) * k;
         c.fy += (py + 1 - c.fy) * k;
-        c.fz += (0 - c.fz) * k;
-        x = c.fx; y = c.fy; z = c.fz;
-        if (Math.abs(c.fx - px) < 0.6 && Math.abs(c.fz) < 0.8) {
+        c.fz += (pw.z - c.fz) * k;
+        tmpP.set(c.fx, c.fy, c.fz);
+        if (Math.hypot(c.fx - pw.x, c.fz - pw.z) < 0.8) {
           c.alive = false;
-          this.onCoin?.(x, y, z);
+          this.onCoin?.(c.fx, c.fy, c.fz);
           continue;
         }
-      } else if (Math.abs(z) < 0.9 && Math.abs(x - px) < 1.0 && y > py - 0.4 && y < py + PLAYER.height + 0.4) {
-        c.alive = false;
-        this.onCoin?.(x, y, z);
-        continue;
+      } else {
+        this.path.pos(c.s, c.x, tmpP, c.y + Math.sin(this.time * 3 + c.s) * 0.06);
+        if (Math.abs(ahead) < 0.9 && Math.abs(c.x - px) < 1.0 && c.y > py - 0.4 && c.y < py + PLAYER.height + 0.4) {
+          c.alive = false;
+          this.onCoin?.(tmpP.x, tmpP.y, tmpP.z);
+          continue;
+        }
       }
       if (n >= MAX_COINS) continue;
       tmpQ.setFromAxisAngle(yAxis, spin + c.s * 0.3);
-      tmpP.set(x, y + Math.sin(this.time * 3 + c.s) * 0.06, z);
       tmpS.setScalar(1);
       tmpM.compose(tmpP, tmpQ, tmpS);
       this.coinMesh.setMatrixAt(n, tmpM);
@@ -407,10 +425,10 @@ export class Track {
   checkPowerUps(dist: number, px: number, py: number) {
     for (const p of this.powerups) {
       if (!p.alive) continue;
-      const z = dist - p.s;
-      if (Math.abs(z) < 1.0 && Math.abs(p.x - px) < 1.1 && p.y > py - 0.5 && p.y < py + PLAYER.height + 0.5) {
+      const ahead = p.s - dist;
+      if (Math.abs(ahead) < 1.0 && Math.abs(p.x - px) < 1.1 && p.y > py - 0.5 && p.y < py + PLAYER.height + 0.5) {
         p.alive = false;
-        this.onPowerUp?.(p.type, p.x, p.y, z);
+        this.onPowerUp?.(p.type, p.obj.position.x, p.obj.position.y, p.obj.position.z);
       }
     }
   }
@@ -439,6 +457,14 @@ export class Track {
     for (const o of this.obstacles) {
       if (o.hit) continue;
       const spec = SPECS[o.type];
+      if (spec.pit) {
+        // Au-dessus du vide et au sol : chute.
+        if (p.dist > o.s + 0.3 && p.dist < o.s + o.len - 0.3 && p.y < 0.05) {
+          o.hit = true;
+          return { kind: 'fall' };
+        }
+        continue;
+      }
       const nowZ = p.dist + hd > o.s && p.prevDist - hd < o.s + o.len;
       if (!nowZ) continue;
       const xNow = Math.abs(p.x - o.x) < spec.halfW + hw;
