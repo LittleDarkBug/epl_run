@@ -10,6 +10,10 @@ import { Path, J, Zone } from '../world/Path';
 
 // Distance avant le coin a partir de laquelle un geste lateral fait tourner.
 const TURN_WINDOW = 22;
+// Le virage s'execute des l'entree dans le carrefour (a TURN_EARLY m du centre) :
+// un geste fait dans le carrefour tourne immediatement, un geste un peu
+// anticipe est garde en memoire jusqu'a l'entree.
+const TURN_EARLY = 4.2;
 // Duree de la sequence de capture (danse du Gardien) avant l'ecran de fin.
 const CAUGHT_TIME = 4.6;
 
@@ -136,6 +140,7 @@ export class Game {
   private path = new Path(Math.floor(Math.random() * 1e9));
   private segIdx = 0;
   private turnQueued = 0;
+  private laneDur: number = PLAYER.laneChangeTime;
   private pw = new THREE.Vector3();
   private yaw = 0;
   private camYaw = 0;
@@ -605,7 +610,6 @@ export class Game {
       if (this.dist > seg.s1 - TURN_WINDOW && !this.turnQueued) {
         if (dir === seg.turn) {
           this.turnQueued = dir;
-          this.audio.swish();
           return;
         }
         // Mauvais cote : on se cogne contre la bordure.
@@ -621,6 +625,7 @@ export class Game {
       this.lane = next;
       this.laneFromX = this.x;
       this.laneT = 0;
+      this.laneDur = PLAYER.laneChangeTime;
       this.audio.swish();
       if (this.tutorialStep === 1) this.advanceTutorial();
     } else if (a === 'up') {
@@ -771,7 +776,7 @@ export class Game {
     this.dist += this.speed * dt;
 
     // Changement de voie avec easing.
-    if (this.laneT < 1) this.laneT = Math.min(1, this.laneT + dt / PLAYER.laneChangeTime);
+    if (this.laneT < 1) this.laneT = Math.min(1, this.laneT + dt / this.laneDur);
     const tx = laneX(this.lane);
     this.x = lerp(this.laneFromX, tx, easeOutCubic(this.laneT));
     this.lean = damp(this.lean, (tx - this.x) * -0.5, 12, dt);
@@ -779,7 +784,7 @@ export class Game {
     // Virage : au passage du coin si le geste a ete fait, sinon le mur.
     let seg = this.path.segs[this.segIdx];
     this.path.ensure(this.dist);
-    if (this.turnQueued && this.dist >= seg.s1) {
+    if (this.turnQueued && this.dist >= seg.s1 - TURN_EARLY) {
       this.performTurn();
       seg = this.path.segs[this.segIdx];
     } else if (!this.turnQueued && this.dist > seg.s1 + J - 1.1) {
@@ -930,9 +935,11 @@ export class Game {
     this.segIdx++;
     this.dist = this.prevDist = next.s0 + along;
     this.x = this.prevX = lat;
-    this.lane = 0;
+    // On garde la voie la plus proche : glissement court, sans retour force au centre.
+    this.lane = clamp(Math.round(lat / laneX(1)), -1, 1);
     this.laneFromX = lat;
     this.laneT = 0;
+    this.laneDur = 0.3;
     this.turnQueued = 0;
     this.cornerAnnounced = -1;
     this.ui.turnHint(0);
@@ -987,6 +994,7 @@ export class Game {
     this.lane = clamp(Math.round(fromX / laneX(1)), -1, 1);
     this.laneFromX = this.x;
     this.laneT = 0;
+    this.laneDur = PLAYER.laneChangeTime;
     this.shake = 0.3;
     this.renderer.hit(1);
     this.audio.stumble();
