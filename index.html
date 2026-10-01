@@ -75,27 +75,21 @@
           <i data-p="signature" title="Signature du chef"><svg viewBox="0 0 24 24"><path d="M3 17c3-6 5-10 7-9s-3 8-1 8 3-5 5-5-1 5 1 5 3-2 6-3" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg></i>
         </div>
         <div id="powerups" class="powerups"></div>
+        <div id="challenge" class="challenge"><div class="ink blue sm"><b>DÉFI</b><em id="ch-time">35</em><i><u id="ch-bar"></u></i></div></div>
+        <div id="ch-intro" class="ch-intro">
+          <div class="ink blue"><small>Défi</small><strong>TOP 2</strong></div>
+          <div id="ch-count" class="ink-seal blue">3</div>
+        </div>
         <div id="rank" class="rank hidden-rank" aria-label="Position">
           <svg class="rank-ring" viewBox="0 0 80 80" aria-hidden="true"><circle class="rank-track" cx="40" cy="40" r="35" /><circle id="rank-gauge" class="rank-gauge" cx="40" cy="40" r="35" /></svg>
-          <div class="rank-num"><b id="rank-n">1</b><sup id="rank-suf">er</sup></div>
-          <small id="rank-of">/3</small>
-          <em id="rank-warn">TOP 2 !</em>
+          <div class="ink-seal blue rank-seal"><div class="rank-num"><b id="rank-n">1</b><sup id="rank-suf">ER</sup></div><small id="rank-of">/3</small></div>
+          <em id="rank-warn" class="ink red xs">TOP 2</em>
         </div>
-        <div id="zone-banner" class="zone-banner"><small id="zone-sub"></small><strong id="zone-name"></strong></div>
-        <div id="turn-hint" class="turn-hint">
-          <svg viewBox="0 0 64 64"><path d="M8 26h30V12l20 20-20 20V38H8z" /></svg>
-          <span id="turn-text"></span>
-        </div>
-        <div id="threat" class="threat">
-          <svg class="threat-stamp" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="28" fill="none" stroke="#e23b4e" stroke-width="4"/><circle cx="32" cy="32" r="21" fill="none" stroke="#e23b4e" stroke-width="2"/><text x="32" y="36.5" text-anchor="middle" font-size="11" font-weight="900" fill="#e23b4e" transform="rotate(-18 32 32)">REFUSÉ</text></svg>
-          <div class="threat-text">
-            <small>Alerte Gardien</small>
-            <strong>FORMULAIRE REJETÉ</strong>
-            <span><b class="threat-arrows">&larr;&nbsp;&rarr;</b> change de voie <em>ou</em> <b class="threat-arrows up">&uarr;</b> saute</span>
-          </div>
-        </div>
-        <div id="stamp-fx" class="stamp-fx"><span>REJETÉ</span></div>
-        <div id="toast" class="toast"></div>
+        <div id="zone-banner" class="zone-banner"><div class="ink black"><small id="zone-sub"></small><strong id="zone-name"></strong></div></div>
+        <div id="turn-hint" class="turn-hint"><div class="ink blue"><svg class="ink-arrow" viewBox="0 0 64 32" aria-hidden="true"><path d="M5 17c12-3 25 1 41-3" /><path d="M37 5l14 10-13 11" /></svg><strong id="turn-text">TOURNE</strong></div></div>
+        <div id="threat" class="threat"><div class="ink red"><span class="ink-pair"><svg class="ink-arrow flip" viewBox="0 0 64 32" aria-hidden="true"><path d="M5 17c12-3 25 1 41-3" /><path d="M37 5l14 10-13 11" /></svg></span><strong>ESQUIVE !</strong><span class="ink-pair"><svg class="ink-arrow" viewBox="0 0 64 32" aria-hidden="true"><path d="M5 17c12-3 25 1 41-3" /><path d="M37 5l14 10-13 11" /></svg></span></div></div>
+        <div id="stamp-fx" class="stamp-fx"><div class="ink red big"><strong>REJETÉ</strong></div></div>
+        <div id="toast" class="callout"><div class="ink blue"><strong></strong></div><div class="ink-seal blue"></div></div>
         <div id="tuto" class="tuto"></div>
       </section>
 

@@ -148,6 +148,9 @@ export class Game {
   private rivals!: Rivals;
   private rank = 1;
   private raceOn = false; // defi en cours
+  private raceGo = false; // apres le compte a rebours
+  private raceCount = 0;
+  private rankHold = 0;
   private raceT = 0;
   private nextRaceAt: number = RACE.firstAt;
   private outTime = 0; // temps cumule hors du top 2
@@ -449,20 +452,46 @@ export class Game {
       return;
     }
     this.raceT += dt;
-    const rank = this.rivals.rankOf(this.dist);
-    if (rank !== this.rank) {
-      this.audio.rankChange(rank < this.rank);
-      this.rank = rank;
+    // Compte a rebours de depart (3 s) : rivaux a la meme allure.
+    if (!this.raceGo) {
+      this.rivals.holdAt(this.speed);
+      const n = 3 - Math.floor(this.raceT);
+      if (n !== this.raceCount && n > 0) {
+        this.raceCount = n;
+        this.ui.challengeIntro(n);
+        this.audio.countdown(n);
+      }
+      if (this.raceT >= 3) {
+        this.raceGo = true;
+        this.raceT = 0;
+        this.rivals.release();
+        this.ui.challengeIntro('go');
+        this.audio.raceStart();
+        window.setTimeout(() => this.ui.challengeIntro(null), 900);
+      }
+      this.ui.challenge(true, RACE.duration, 1);
+      return;
     }
+    // Changement de place valide s'il tient 0.4 s (pas de clignotement quand
+    // un coureur a deja tourne et l'autre pas encore).
+    const raw = this.rivals.rankOf(this.dist);
+    this.rankHold = raw === this.rank ? 0 : this.rankHold + dt;
+    if (this.rankHold > 0.4) {
+      this.audio.rankChange(raw < this.rank);
+      this.rank = raw;
+      this.rankHold = 0;
+    }
+    const rank = this.rank;
     const before = this.outTime / RACE.outLimit;
     if (this.raceT > RACE.grace && rank > RACE.top) this.outTime += dt;
     else this.outTime = Math.max(0, this.outTime - dt * 1.5);
     const gauge = clamp(this.outTime / RACE.outLimit, 0, 1);
     if (before < 0.5 && gauge >= 0.5) {
       this.audio.whistle();
-      this.ui.toast('REVIENS DANS LE TOP 2 !', true, 1300);
+      this.ui.callout({ title: 'TOP 2 !', danger: true, ms: 1400 });
     }
     this.ui.rank(rank, RACE.runners, gauge);
+    this.ui.challenge(true, RACE.duration - this.raceT, 1 - this.raceT / RACE.duration, rank > RACE.top);
     if (gauge >= 1) {
       this.caught('Hors du top 2 trop longtemps : le Gardien t\'a rattrapé.');
       return;
@@ -472,14 +501,16 @@ export class Game {
 
   private startRace() {
     this.raceOn = true;
+    this.raceGo = false;
+    this.raceCount = 0;
     this.raceT = 0;
     this.outTime = 0;
-    this.rank = this.rivals.list.length + 1;
+    this.rankHold = 0;
     this.rivals.enter(this.dist, this.speed);
-    this.ui.banner('Défi', 'RESTE DANS LE TOP 2 !', 2600);
+    this.rank = this.rivals.rankOf(this.dist);
     this.ui.rank(this.rank, RACE.runners, 0);
     this.ui.rankShow(true);
-    this.audio.raceStart();
+    this.audio.whistle();
   }
 
   private endRace(rank: number) {
@@ -487,10 +518,12 @@ export class Game {
     this.nextRaceAt = this.dist + RACE.every[0] + Math.random() * (RACE.every[1] - RACE.every[0]);
     const pts = (rank === 1 ? 500 : rank === 2 ? 200 : 0) * this.multiplier();
     this.score += pts;
-    this.ui.banner('Fin du défi', rank === 1 ? `1ER ! +${pts}` : rank === 2 ? `2E ! +${pts}` : 'DERNIER...', 2400);
+    if (rank <= 2) this.ui.callout({ title: rank === 1 ? '1ER !' : '2E !', value: `+${pts}`, ms: 1800 });
+    else this.ui.callout({ title: 'DERNIER', danger: true, ms: 1600 });
     this.audio.raceEnd(rank <= 2);
     if (rank === 1) this.ui.flashWhite(0.3);
     this.rivals.leave();
+    this.ui.challenge(false);
     window.setTimeout(() => this.ui.rankShow(false), 1800);
   }
 
@@ -537,7 +570,7 @@ export class Game {
         this.diplomas++;
         this.audio.powerUp();
         this.particles.sparkle(x, y, z, [1, 0.8, 0.3], 40);
-        this.ui.toast(`DIPLÔME ! +${pts}`);
+        this.ui.callout({ title: 'DIPLÔME', value: `+${pts}` });
         this.ui.flashWhite(0.3);
         return;
       }
@@ -549,7 +582,7 @@ export class Game {
       this.audio.powerUp();
       const colors: Record<PowerUpType, number[]> = { magnet: [1, 0.2, 0.35], sneakers: [0.1, 0.9, 0.8], double: [0.7, 0.4, 1] };
       this.particles.sparkle(x, y, z, colors[t], 30);
-      this.ui.toast({ magnet: 'AIMANT !', sneakers: 'SUPER BASKETS !', double: 'BONNE NOTE x2 !' }[t]);
+      this.ui.callout({ title: { magnet: 'AIMANT', sneakers: 'SUPER BASKETS', double: 'POINTS x2' }[t] });
       this.ui.flashWhite(0.25);
       if (t === 'sneakers') this.player.setSuperSneakers(true);
     };
@@ -578,9 +611,9 @@ export class Game {
       this.score += pts;
       this.audio.shieldUp();
       this.ui.flashWhite(0.45);
-      this.ui.toast(`DOSSIER COMPLET ! +${pts}`, false, 1600);
+      this.ui.callout({ title: 'DOSSIER COMPLET', value: `+${pts}`, ms: 1600 });
     } else {
-      this.ui.toast(`${names[p]} (${this.dossier.size}/3)`);
+      this.ui.callout({ title: names[p], value: `${this.dossier.size}/3` });
     }
     this.refreshDossier();
   }
@@ -597,7 +630,7 @@ export class Game {
     this.player.play('stumble');
     this.particles.sparkle(this.pw.x, this.y + 1, this.pw.z, [1, 0.85, 0.4], 40);
     this.ui.flashWhite(0.35);
-    this.ui.toast('LE DOSSIER T\'A SAUVÉ !', false, 1400);
+    this.ui.callout({ title: 'SAUVÉ !', ms: 1300 });
     this.refreshDossier();
     return true;
   }
@@ -637,6 +670,8 @@ export class Game {
     this.path.reset();
     this.rivals.hide();
     this.raceOn = false;
+    this.ui.challenge(false);
+    this.ui.challengeIntro(null);
     this.nextRaceAt = this.dist + RACE.firstAt;
     this.ui.rankShow(false);
     this.segIdx = this.path.segIndexAt(this.dist);
@@ -725,7 +760,7 @@ export class Game {
     this.chaser.play('roar');
     this.audio.roar();
     this.shake = 0.35;
-    this.ui.toast('COURS !', true, 1300);
+    this.ui.toast('COURS !', false, 1300);
   }
 
   private restart(play: boolean) {
@@ -820,7 +855,7 @@ export class Game {
       this.tutorialDone = true;
       store.set('tuto', 1);
       this.ui.tutorial(null);
-      this.ui.toast('BIEN JOUE !', false, 900);
+      this.ui.toast('BIEN JOUÉ !', false, 1000);
       return;
     }
     this.ui.tutorial(seq[this.tutorialStep]);
@@ -1177,7 +1212,7 @@ export class Game {
     this.warn = CHASER.warnTime;
     this.player.play('stumble');
     this.audio.whistle();
-    if (!quiet) this.ui.toast('ATTENTION !', true);
+    if (!quiet) this.ui.callout({ title: 'ATTENTION !', danger: true });
   }
 
   private onCrash(type: string) {
@@ -1219,6 +1254,8 @@ export class Game {
     this.ui.tutorial(null);
     this.audio.setIntensity(0);
     this.audio.caught();
+    this.ui.challenge(false);
+    this.ui.challengeIntro(null);
   }
 
   private updateCaught(dt: number) {

@@ -51,6 +51,9 @@ export class Rival {
   boost = 0;
   speed = 0;
   leaving = false; // fin du defi : il decroche et disparait
+  hold = 0; // vitesse imposee pendant le compte a rebours (0 = libre)
+  private segI = 0;
+  private turnAt = 3;
   private phase = Math.random() * 10;
   private judged = new WeakSet<object>();
   private failing = new WeakSet<object>();
@@ -69,7 +72,9 @@ export class Rival {
     return this.vy === 0;
   }
 
-  reset(s: number, lane: number) {
+  reset(s: number, lane: number, path: Path) {
+    this.segI = path.segIndexAt(s);
+    this.turnAt = 1.5 + Math.random() * 2.7;
     this.s = this.prevS = s;
     this.lane = lane;
     this.x = this.prevX = this.laneFrom = laneX(lane);
@@ -176,7 +181,26 @@ export class Rival {
     return true;
   }
 
-  step(dt: number, track: Track, playerS: number, time: number) {
+  // Virage comme le joueur : bascule sur la rue suivante en entrant dans le
+  // carrefour (meme raccourci), position exprimee dans le nouveau repere.
+  private corner(path: Path) {
+    const seg = path.segs[this.segI];
+    const next = path.segs[this.segI + 1];
+    if (!next || this.s < seg.s1 - this.turnAt) return;
+    const c = path.posOn(seg, seg.s1, 0, new THREE.Vector3());
+    const p = path.posOn(seg, this.s, this.x, new THREE.Vector3());
+    const rx = p.x - c.x, rz = p.z - c.z;
+    const along = next.dx * rx + next.dz * rz;
+    const lat = -next.dz * rx + next.dx * rz;
+    this.segI++;
+    this.s = this.prevS = next.s0 + along;
+    this.x = this.prevX = this.laneFrom = lat;
+    this.lane = clamp(Math.round(lat / laneX(1)), -1, 1);
+    this.laneT = 0;
+    this.turnAt = 1.5 + Math.random() * 2.7;
+  }
+
+  step(dt: number, track: Track, playerS: number, time: number, path: Path) {
     this.prevS = this.s;
     this.prevX = this.x;
     // Vitesse : celle du parcours, rythme propre, peloton groupe.
@@ -187,8 +211,9 @@ export class Rival {
     const pace = 1 + this.look.skill + 0.035 * Math.sin(time * 0.23 + this.phase) + 0.015 * Math.sin(time * 0.71 + this.phase * 2);
     const stunK = this.stun > 0 ? 0.55 : 1;
     const target = baseSpeed(this.s) * (this.leaving ? 0.62 : pace * rubber) * stunK * (1 + this.boost);
-    this.speed = damp(this.speed, target, this.stun > 0 ? 8 : 2.5, dt);
+    this.speed = this.hold > 0 ? this.hold : damp(this.speed, target, this.stun > 0 ? 8 : 2.5, dt);
     this.s += this.speed * dt;
+    this.corner(path);
     if (this.stun > 0) this.stun -= dt;
     if (this.hitCool > 0) this.hitCool -= dt;
     if (this.boost > 0) this.boost = Math.max(0, this.boost - dt * 0.18);
@@ -220,7 +245,7 @@ export class Rival {
   }
 
   place(dt: number, path: Path, ground: number, running: boolean) {
-    const seg = path.segAt(this.s);
+    const seg = path.segs[this.segI] ?? path.segAt(this.s);
     path.posOn(seg, this.s, this.x, tmp, this.y);
     const yaw = path.yawOf(seg);
     // Lissage (virages, remise a zero) : pas de teleportation visible.
@@ -315,16 +340,30 @@ export class Rivals {
   // Les rivaux ne courent que pendant les defis (portions temporaires).
   active = false;
 
-  // Debut d'un defi : ils arrivent de derriere en sprint, sur les voies laterales.
+  // Debut d'un defi : ils apparaissent devant, bien dans le champ, sur les
+  // voies laterales, et tiennent l'allure du joueur jusqu'au depart.
   enter(s: number, speed: number) {
-    const slots: [number, number][] = [[-13, -1], [-17, 1]];
+    const slots: [number, number][] = [[5, -1], [0.6, 1]];
     this.list.forEach((r, i) => {
-      r.reset(s + slots[i][0], slots[i][1]);
+      r.reset(s + slots[i][0], slots[i][1], this.path);
       r.speed = speed;
-      r.boost = 0.32;
+      r.hold = speed;
       r.actor.play('run');
     });
     this.active = true;
+  }
+
+  // Compte a rebours : meme allure que le joueur.
+  holdAt(speed: number) {
+    for (const r of this.list) if (r.hold > 0) r.hold = speed;
+  }
+
+  // Depart : chacun reprend son allure, petite accelaration.
+  release() {
+    for (const r of this.list) {
+      r.hold = 0;
+      r.boost = 0.06;
+    }
   }
 
   // Fin du defi : ils decrochent puis disparaissent.
@@ -336,6 +375,7 @@ export class Rivals {
     this.active = false;
     for (const r of this.list) {
       r.leaving = false;
+      r.hold = 0;
       r.visible = false;
       r.actor.root.visible = false;
       r.actor.shadowMesh.visible = false;
@@ -354,7 +394,7 @@ export class Rivals {
       if (running) {
         this.track.obstaclesIn(r.s, r.s + 45, this.obs);
         r.think(this.obs, playerS, playerLane);
-        ground = r.step(dt, this.track, playerS, this.time);
+        ground = r.step(dt, this.track, playerS, this.time, this.path);
       }
       // Rendu seulement pres du joueur (le decor n'existe que la).
       const rel = r.s - playerS;

@@ -1,4 +1,5 @@
 import '@fontsource/archivo-black/latin-400.css';
+import '@fontsource/oswald/latin-700.css';
 import '@fontsource/outfit/latin-400.css';
 import '@fontsource/outfit/latin-600.css';
 import '@fontsource/outfit/latin-800.css';

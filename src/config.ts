@@ -53,7 +53,7 @@ export const RACE = {
   runners: 3, // Afi et deux rivaux
   top: 2,
   outLimit: 10, // secondes cumulees hors du top 2 avant la capture
-  grace: 5, // secondes en debut de defi sans penalite
+  grace: 3, // secondes apres le depart sans penalite
   firstAt: 450, // premier defi (metres)
   every: [700, 1000], // ecart entre deux defis (metres)
   duration: 35, // duree d'un defi (secondes)

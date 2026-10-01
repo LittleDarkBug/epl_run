@@ -24,6 +24,46 @@ const PU_INFO: Record<PowerUpType, { label: string; color: string; icon: string 
   },
 };
 
+// Fleche dessinee a l'encre (tutoriel).
+const ARROW = '<svg class="ink-arrow" viewBox="0 0 64 32" aria-hidden="true"><path d="M5 17c12-3 25 1 41-3" /><path d="M37 5l14 10-13 11" /></svg>';
+
+// Grain d'encre des tampons : masque irregulier (taches plus pales, manques).
+function inkGrain(): string {
+  const n = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = n;
+  const x = c.getContext('2d')!;
+  x.fillStyle = '#000';
+  x.fillRect(0, 0, n, n);
+  const img = x.getImageData(0, 0, n, n);
+  const d = img.data;
+  for (let i = 0; i < n * n; i++) {
+    const r = Math.random();
+    d[i * 4 + 3] = r < 0.06 ? 60 + r * 900 : r < 0.12 ? 190 : 255;
+  }
+  x.putImageData(img, 0, 0);
+  // Quelques zones mal encrees.
+  x.globalCompositeOperation = 'destination-out';
+  for (let k = 0; k < 14; k++) {
+    const g = x.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, 'rgba(0,0,0,0.55)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.save();
+    x.translate(Math.random() * n, Math.random() * n);
+    x.scale(10 + Math.random() * 26, 4 + Math.random() * 10);
+    x.fillStyle = g;
+    x.beginPath();
+    x.arc(0, 0, 1, 0, Math.PI * 2);
+    x.fill();
+    x.restore();
+  }
+  return c.toDataURL();
+}
+
+document.documentElement.style.setProperty('--ink-grain', `url(${inkGrain()})`);
+
+const tilt = (el: HTMLElement, a: number, b: number, v = '--rot') => el.style.setProperty(v, `${(a + Math.random() * (b - a)).toFixed(1)}deg`);
+
 export class UI {
   private screens = new Map<ScreenId, HTMLElement>();
   private toastTimer = 0;
@@ -121,17 +161,63 @@ export class UI {
     }
   }
 
-  toast(text: string, warn = false, ms = 1100) {
+  // Message central : coup de tampon (encre bleue, rouge si danger) et sceau
+  // rond pour une valeur (+250, 2/3).
+  callout(o: { title: string; value?: string; danger?: boolean; ms?: number }) {
     const el = $('toast');
-    el.textContent = text;
-    el.classList.toggle('warn', warn);
+    const [stamp, seal] = Array.from(el.children) as HTMLElement[];
+    stamp.querySelector('strong')!.textContent = o.title;
+    seal.textContent = o.value ?? '';
+    for (const e of [stamp, seal]) {
+      e.classList.toggle('red', !!o.danger);
+      e.classList.toggle('blue', !o.danger);
+    }
+    tilt(el, -8, -3);
+    tilt(el, 6, 15, '--rot2');
+    el.classList.remove('show', 'hide');
+    void el.offsetWidth;
     el.classList.add('show');
     clearTimeout(this.toastTimer);
-    this.toastTimer = window.setTimeout(() => el.classList.remove('show'), ms);
+    this.toastTimer = window.setTimeout(() => {
+      el.classList.remove('show');
+      el.classList.add('hide');
+    }, o.ms ?? 1200);
+  }
+
+  toast(text: string, warn = false, ms = 1100) {
+    this.callout({ title: text, danger: warn, ms });
   }
 
   private zoneTimer = 0;
   private lastRank = 0;
+
+  // Carte de depart d'un defi : 3, 2, 1, puis PARTEZ ; null pour masquer.
+  challengeIntro(n: number | 'go' | null) {
+    const el = $('ch-intro');
+    if (n === null) {
+      el.classList.remove('show', 'go');
+      return;
+    }
+    const c = $('ch-count');
+    c.textContent = n === 'go' ? 'PARTEZ !' : String(n);
+    c.classList.toggle('red', n === 'go');
+    tilt(c, -14, 14, '--rot2');
+    el.classList.toggle('go', n === 'go');
+    el.classList.add('show');
+    c.classList.remove('tick');
+    void c.offsetWidth;
+    c.classList.add('tick');
+  }
+
+  // Pastille du defi en cours : secondes restantes et barre.
+  challenge(on: boolean, left = 0, frac = 1, hot = false) {
+    const el = $('challenge');
+    el.classList.toggle('show', on);
+    if (!on) return;
+    $('ch-time').textContent = String(Math.max(0, Math.ceil(left)));
+    ($('ch-bar') as HTMLElement).style.transform = `scaleX(${frac})`;
+    el.classList.toggle('hot', hot);
+  }
 
   rankShow(on: boolean) {
     $('rank').classList.toggle('hidden-rank', !on);
@@ -143,6 +229,8 @@ export class UI {
     $('zone-sub').textContent = sub;
     $('zone-name').textContent = name;
     const el = $('zone-banner');
+    el.classList.remove('show');
+    void el.offsetWidth;
     el.classList.add('show');
     clearTimeout(this.zoneTimer);
     this.zoneTimer = window.setTimeout(() => el.classList.remove('show'), ms);
@@ -153,7 +241,7 @@ export class UI {
     const el = $('rank');
     if (n !== this.lastRank) {
       $('rank-n').textContent = String(n);
-      $('rank-suf').textContent = n === 1 ? 'er' : 'e';
+      $('rank-suf').textContent = n === 1 ? 'ER' : 'E';
       $('rank-of').textContent = '/' + total;
       if (this.lastRank) {
         el.classList.remove('up', 'down');
@@ -180,7 +268,7 @@ export class UI {
   // Coup de tampon plein ecran.
   stamp(text: string) {
     const el = $('stamp-fx');
-    el.querySelector('span')!.textContent = text;
+    el.querySelector('strong')!.textContent = text;
     el.classList.remove('slam');
     void el.offsetWidth;
     el.classList.add('slam');
@@ -196,6 +284,8 @@ export class UI {
     $('zone-sub').textContent = info[0];
     $('zone-name').textContent = info[1];
     const el = $('zone-banner');
+    el.classList.remove('show');
+    void el.offsetWidth;
     el.classList.add('show');
     clearTimeout(this.zoneTimer);
     this.zoneTimer = window.setTimeout(() => el.classList.remove('show'), 2400);
@@ -215,7 +305,7 @@ export class UI {
       return;
     }
     el.classList.toggle('left', dir < 0);
-    $('turn-text').textContent = dir < 0 ? 'Glisse à gauche pour tourner' : 'Glisse à droite pour tourner';
+    $('turn-text').textContent = 'TOURNE';
     el.classList.add('show');
   }
 
@@ -231,17 +321,19 @@ export class UI {
     this.flash.style.opacity = '0';
   }
 
+  // Tutoriel : un tampon avec fleches a l'encre et un seul mot.
   tutorial(kind: 'lanes' | 'jump' | 'slide' | null) {
     if (!kind) {
       this.tuto.classList.remove('show');
       return;
     }
-    const content = {
-      lanes: '<span class="arrow" style="--nx:6px">&larr; &rarr;</span>Glisse pour changer de voie',
-      jump: '<span class="arrow" style="--ny:-6px">&uarr;</span>Glisse vers le haut pour sauter',
-      slide: '<span class="arrow" style="--ny:6px">&darr;</span>Glisse vers le bas pour passer dessous',
-    }[kind];
-    this.tuto.innerHTML = content;
+    const pair = (flip = false) => `<span class="ink-pair">${flip ? ARROW.replace('ink-arrow', 'ink-arrow flip') : ARROW}</span>`;
+    const word = (w: string) => `<strong>${w}</strong>`;
+    const inner = kind === 'lanes' ? pair(true) + word('GLISSE') + pair()
+      : kind === 'jump' ? pair() + word('SAUTE') : word('BAISSE-TOI') + pair();
+    const v = kind === 'jump' ? ' v' : kind === 'slide' ? ' v down' : '';
+    this.tuto.innerHTML = `<div class="ink blue${v}">${inner}</div>`;
+    tilt(this.tuto.firstElementChild as HTMLElement, -5, -2);
     this.tuto.classList.add('show');
   }
 
