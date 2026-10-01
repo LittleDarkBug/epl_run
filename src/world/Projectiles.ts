@@ -3,9 +3,10 @@ import { applyBend } from '../render/curve';
 import type { Path } from './Path';
 
 // Projectiles du Gardien : des formulaires rejetes, froisses et enveloppes
-// d'energie rouge. Une cible au sol annonce le point d'impact (la ou le joueur
-// arrivera), le projectile passe au-dessus de la camera puis s'ecrase. On
-// l'esquive en changeant de voie ou en sautant assez haut.
+// d'energie rouge, lances depuis sa main. Une cible au sol annonce le point
+// d'impact (la ou la cible arrivera : le joueur ou un rival) ; le projectile
+// decrit un arc au-dessus des coureurs puis s'ecrase. On l'esquive en
+// changeant de voie ou en sautant assez haut.
 
 interface Shot {
   s: number; // abscisse d'impact sur le chemin
@@ -22,7 +23,7 @@ interface Shot {
   scorch: THREE.Mesh;
 }
 
-const FLIGHT = 1.0; // duree de vol
+export const FLIGHT = 1.0; // duree de vol
 const HAZARD = 0.5; // flammes actives apres l'impact
 const up = new THREE.Vector3();
 
@@ -40,6 +41,8 @@ export class Projectiles {
   private beamMat: THREE.MeshBasicMaterial;
   private time = 0;
   onLaunch: ((from: THREE.Vector3) => void) | null = null;
+  // Point de depart demande au moment du lancer (main du Gardien).
+  launchPoint: ((out: THREE.Vector3) => void) | null = null;
   onImpact: ((pos: THREE.Vector3, s: number, x: number) => void) | null = null;
   onTrail: ((pos: THREE.Vector3) => void) | null = null;
 
@@ -129,15 +132,6 @@ export class Projectiles {
     this.shots.push(sh);
   }
 
-  // Point de depart du vol (fourni par le jeu : derriere le joueur, en hauteur).
-  launchFrom(from: THREE.Vector3) {
-    for (const sh of this.shots) if (!sh.launched && sh.t >= sh.launchAt - 0.02) sh.from.copy(from);
-  }
-
-  needsLaunch(): boolean {
-    return this.shots.some((sh) => !sh.launched && sh.t >= sh.launchAt);
-  }
-
   update(dt: number) {
     this.time += dt;
     for (let i = this.shots.length - 1; i >= 0; i--) {
@@ -153,6 +147,7 @@ export class Projectiles {
       }
       if (!sh.launched && sh.t >= sh.launchAt) {
         sh.launched = true;
+        this.launchPoint?.(sh.from);
         sh.ball.visible = true;
         this.onLaunch?.(sh.from);
       }

@@ -14,6 +14,8 @@ const TURN_WINDOW = 22;
 // un geste fait dans le carrefour tourne immediatement, un geste un peu
 // anticipe est garde en memoire jusqu'a l'entree.
 const TURN_EARLY = 4.2;
+// Duree de la charge visible du Gardien avant son lancer.
+const ROBOT_WIND = 1.3;
 // Duree de la sequence de capture (danse du Gardien) avant l'ecran de fin.
 const CAUGHT_TIME = 4.6;
 
@@ -33,7 +35,7 @@ import type { Characters } from '../actors/characters';
 import type { BakedAsset } from '../world/assets';
 import { Input, Action } from './Input';
 import { Audio } from './Audio';
-import { Projectiles } from '../world/Projectiles';
+import { FLIGHT, Projectiles } from '../world/Projectiles';
 import { Rivals } from '../race/Rivals';
 import { Items, type ItemContext } from '../race/Items';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -162,6 +164,10 @@ export class Game {
   private slowT = 0; // ralentissement apres un faux pas
   private projTimer = 0;
   private projSeen = 0;
+  // Attaque du Gardien en cours : charge visible, lancer depuis sa main.
+  private robotAtk: { t: number; launched: boolean; target: number; dodge: number } | null = null;
+  private camReveal = 0;
+  private revealSide = 1;
   private laneDur: number = PLAYER.laneChangeTime;
   private pw = new THREE.Vector3();
   private yaw = 0;
@@ -411,9 +417,14 @@ export class Game {
   private setupProjectiles() {
     const pr = this.projectiles = new Projectiles(this.path);
     this.scene.add(pr.group);
+    pr.launchPoint = (out) => {
+      this.chaser.root.updateMatrixWorld(true);
+      this.chaser.handWorld(out);
+    };
     pr.onLaunch = () => {
       this.audio.projLaunch();
       this.chaser.throwAnim();
+      if (this.robotAtk) this.robotAtk.launched = true;
     };
     pr.onTrail = (p) => {
       this.particles.trail(p.x, p.y, p.z, [1, 0.25, 0.08]);
@@ -430,20 +441,39 @@ export class Game {
 
   // Declenche un tir si la situation le permet (jamais pres d'un virage, ni
   // quand les voies voisines sont bouchees).
+  // Le Gardien charge puis lance un formulaire enflamme sur un coureur : le
+  // joueur, ou pendant un defi parfois le rival en derniere position.
   private tryProjectile(): boolean {
-    const T = 1.7;
-    const st = this.dist + this.speed * T;
+    const T = ROBOT_WIND + FLIGHT;
     const seg = this.path.segs[this.segIdx];
-    if (st > seg.s1 - J - 14 || this.turnQueued) return false;
-    const lane = this.lane;
-    if (!this.track.laneClear(lane, st, 4)) return false;
-    const escape = [lane - 1, lane + 1].filter((l) => l >= -1 && l <= 1 && this.track.laneClear(l, st, 9));
-    if (!escape.length) return false;
-    this.projectiles.spawn(st, laneX(lane), T);
+    if (this.turnQueued || this.dist + this.speed * T > seg.s1 - J - 14) return false;
+    let target = -1;
+    if (this.raceOn && this.raceGo && this.rivals.active) {
+      const last = this.rivals.list.reduce((m, r, k) => (r.visible && r.s < this.dist && (m < 0 || r.s < this.rivals.list[m].s) ? k : m), -1);
+      if (last >= 0 && Math.random() < 0.6) target = last;
+    }
+    let st: number, x: number;
+    if (target >= 0) {
+      const r = this.rivals.list[target];
+      st = r.s + r.speed * T;
+      x = laneX(r.lane);
+    } else {
+      st = this.dist + this.speed * T;
+      const lane = this.lane;
+      if (!this.track.laneClear(lane, st, 4)) return false;
+      const escape = [lane - 1, lane + 1].filter((l) => l >= -1 && l <= 1 && this.track.laneClear(l, st, 9));
+      if (!escape.length) return false;
+      x = laneX(lane);
+    }
+    this.projectiles.spawn(st, x, T);
+    this.robotAtk = { t: 0, launched: false, target, dodge: target >= 0 && Math.random() < 0.55 ? 0.7 + Math.random() * 0.6 : -1 };
+    this.revealSide = this.x <= 0 ? 1 : -1;
+    this.chaser.holdOrb(true);
+    this.chaser.setAngry(1);
     this.audio.projCharge();
     this.audio.taunt();
-    // Carte d'explication pour les deux premiers tirs.
-    if (this.projSeen < 2) {
+    // Carte d'explication pour les deux premiers tirs vises sur le joueur.
+    if (target < 0 && this.projSeen < 2) {
       this.projSeen++;
       this.ui.threat();
     }
@@ -629,22 +659,42 @@ export class Game {
 
   private updateProjectiles(dt: number) {
     const pr = this.projectiles;
+    const atk = this.robotAtk;
     if (this.state === 'playing') {
       this.projTimer -= dt;
-      if (this.projTimer <= 0 && this.dist > 350 && pr.active === 0) {
+      if (this.projTimer <= 0 && this.dist > 350 && pr.active === 0 && !atk) {
         const d = clamp((this.dist - 350) / 3000, 0, 1);
         this.projTimer = this.tryProjectile() ? 11 - 5 * d + Math.random() * 4 : 1.5;
       }
-      if (pr.needsLaunch()) {
-        // Depart derriere le joueur, en hauteur (le Gardien lance depuis l'arriere).
-        pr.launchFrom(this.path.pos(Math.max(this.dist - Math.max(this.chaserDist, 9), this.path.segs[this.segIdx].s0 + 1), this.chaserX, new THREE.Vector3(), 3.4));
+      if (atk) {
+        atk.t += dt;
+        // Le rival vise tente parfois d'esquiver.
+        if (atk.dodge > 0 && atk.t >= atk.dodge) {
+          atk.dodge = -1;
+          this.rivals.list[atk.target]?.sidestep(this.track);
+        }
+        if (atk.t > ROBOT_WIND + FLIGHT + 0.6) this.robotAtk = null;
       }
     }
+    // Camera derriere le Gardien pendant la charge : on le voit armer son bras.
+    const reveal = atk && atk.t < ROBOT_WIND + 0.3 ? 1 : 0;
+    this.camReveal = damp(this.camReveal, reveal, reveal ? 3.2 : 4.5, dt);
     pr.update(dt);
-    if (this.state === 'playing' && pr.hits(this.dist, this.x, this.y)) {
+    if (this.state !== 'playing') return;
+    if (pr.hits(this.dist, this.x, this.y)) {
       this.particles.sparkle(this.pw.x, this.y + 1, this.pw.z, [1, 0.3, 0.1], 25);
       this.ui.stamp('REJETÉ');
       this.onStumble(this.x, true);
+    }
+    if (this.rivals.active) {
+      for (const r of this.rivals.list) {
+        if (r.visible && pr.hits(r.s, r.x, r.y)) {
+          r.hit(1.8);
+          r.actor.spin();
+          this.particles.sparkle(r.pos.x, r.y + 1, r.pos.z, [1, 0.3, 0.1], 25);
+          this.audio.itemHit();
+        }
+      }
     }
   }
 
@@ -758,6 +808,9 @@ export class Game {
     this.dossier.clear();
     this.shield = false;
     this.projectiles.clear();
+    this.robotAtk = null;
+    this.camReveal = 0;
+    this.chaser.holdOrb(false);
     this.projTimer = 6;
     this.zone = 'street';
     this.path.reset();
@@ -1172,19 +1225,20 @@ export class Game {
     if (this.warn > 0) this.warn -= dt;
     const introHold = this.state === 'intro' ? (this.stateTime < 1.05 ? 4.4 : CHASER.farDistance) : null;
     const gauge = clamp(this.outTime / RACE.outLimit, 0, 1);
-    const target = introHold ?? (this.warn > 0 ? CHASER.nearDistance : lerp(CHASER.farDistance, 4.0, gauge));
-    const rate = this.warn > 0 ? 3 : this.state === 'intro' ? 2.5 : gauge > 0 ? 1.4 : 0.45;
+    const charging = this.robotAtk && !this.robotAtk.launched;
+    const target = introHold ?? (this.warn > 0 ? CHASER.nearDistance : charging ? 6.5 : lerp(CHASER.farDistance, 4.0, gauge));
+    const rate = this.warn > 0 || charging ? 3 : this.state === 'intro' ? 2.5 : gauge > 0 ? 1.4 : 0.45;
     this.chaserDist = damp(this.chaserDist, target, rate, dt);
     if (this.state === 'intro' && this.stateTime < 1.05) this.chaserDist = 4.4;
     this.chaserX = damp(this.chaserX, this.x + (this.x <= 0 ? 1.4 : -1.4), 3, dt);
     const threat = Math.max(this.warn > 0 ? 1 : 0, gauge);
-    this.chaser.setAngry(threat);
+    this.chaser.setAngry(this.robotAtk ? 1 : threat);
     this.audio.setIntensity(threat);
     this.ui.setDanger(threat > 0.5);
 
     this.placeActors(dt, ground, true);
     // Masque le Gardien quand il traverserait la camera.
-    this.chaser.root.visible = this.chaserDist < 4.7;
+    this.chaser.root.visible = this.chaserDist < 4.7 || this.camReveal > 0.05;
 
     const px = this.pw.x, pz = this.pw.z;
     if (this.shield && Math.random() < 0.5) this.particles.trail(px + (Math.random() - 0.5) * 0.8, this.y + 0.3 + Math.random() * 1.4, pz, [1, 0.8, 0.3]);
@@ -1357,6 +1411,8 @@ export class Game {
     this.ui.challenge(false);
     this.ui.challengeIntro(null);
     this.ui.incoming(null);
+    this.robotAtk = null;
+    this.chaser.holdOrb(false);
   }
 
   private updateCaught(dt: number) {
@@ -1516,6 +1572,13 @@ export class Game {
       this.camLook.lerp(this.toWorld(look, origin), 1 - Math.exp(-dt * 5));
     } else {
       ({ pos, look } = this.playCamera());
+      // Plan sur le Gardien pendant sa charge (route toujours visible).
+      if (this.camReveal > 0.001) {
+        const k = easeInOutCubic(this.camReveal);
+        // Par-dessus l'epaule du Gardien : reste dans le couloir et sous le plafond.
+        pos.lerp(new THREE.Vector3(this.chaserX * 0.6 + this.revealSide * 1.6, 3.3, this.chaserDist + 4.2), k);
+        look.lerp(new THREE.Vector3(this.x * 0.6, 1.2, -5), k);
+      }
       this.toWorld(pos, origin);
       this.toWorld(look, origin);
       this.camPos.x = damp(this.camPos.x, pos.x, 8, dt);

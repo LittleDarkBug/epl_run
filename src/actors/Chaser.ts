@@ -41,6 +41,11 @@ export class Chaser {
   private roarW = 0;
   private grabW = 0;
   private throwT = -1;
+  private orb = new THREE.Group(); // formulaire rejete charge dans la main
+  private orbScale = new THREE.Vector3(1, 1, 1);
+  private orbMat!: THREE.MeshStandardMaterial;
+  private holding = false;
+  private windW = 0;
   private angry = 0;
   private dormant = 0;
   private dormantTarget = 0;
@@ -131,6 +136,28 @@ export class Chaser {
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.48, 8).rotateZ(Math.PI / 2), gold);
     attachToBone(bar, spine2, tmp, new THREE.Vector3(0, sp.y + 0.1, sp.z - 0.137));
 
+    // Formulaire rejete enflamme tenu dans la main droite (attaque).
+    const hand = B.mixamorigRightHand;
+    if (hand) {
+      this.orbMat = charMat('#ffc7a8', { r: 0.8, e: '#ff3a1a', ei: 2 });
+      const paper = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 1), this.orbMat);
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d')!;
+      const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,120,60,0.95)');
+      gr.addColorStop(1, 'rgba(255,40,20,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 64, 64);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.scale.setScalar(0.75);
+      this.orb.add(paper, glow);
+      const hp = boneWorldPos(hand, tmp);
+      attachToBone(this.orb, hand, tmp, new THREE.Vector3(hp.x + (hp.x > 0 ? 0.09 : -0.09), hp.y - 0.02, hp.z + 0.04));
+      this.orbScale.copy(this.orb.scale); // compense l'echelle du squelette
+      this.orb.visible = false;
+    }
+
     // Retour dans la hierarchie finale.
     this.model.scale.setScalar(SCALE);
     this.model.rotation.y = Math.PI;
@@ -208,6 +235,19 @@ export class Chaser {
   // Geste de lancer (bras droit arme en arriere puis projete vers l'avant).
   throwAnim() {
     this.throwT = 0;
+    this.holding = false;
+    this.orb.visible = false;
+  }
+
+  // Attaque : il arme le bras avec un formulaire enflamme dans la main.
+  holdOrb(on: boolean) {
+    this.holding = on;
+    this.orb.visible = on;
+  }
+
+  // Position monde de la main (depart du projectile).
+  handWorld(out: THREE.Vector3): THREE.Vector3 {
+    return this.orb.getWorldPosition(out);
   }
 
   setDormant(v: boolean) {
@@ -259,6 +299,21 @@ export class Chaser {
       rotateBone(B.mixamorigRightForeArm, r, AX, -0.9 * w);
     }
 
+    // Bras arme pendant la charge (le lancer prend le relais).
+    this.windW = damp(this.windW, this.holding ? 1 : 0, 6, dt);
+    if (this.windW > 0.01 && this.throwT < 0) {
+      // Bras leve au-dessus de la tete, coude plie vers l'arriere.
+      rotateBone(B.mixamorigRightArm, r, AX, -3.0 * this.windW);
+      rotateBone(B.mixamorigRightArm, r, AZ, 0.45 * this.windW);
+      rotateBone(B.mixamorigRightForeArm, r, AX, -1.3 * this.windW);
+      rotateBone(B.mixamorigSpine1, r, AY, 0.4 * this.windW);
+      rotateBone(B.mixamorigSpine1, r, AX, -0.15 * this.windW);
+    }
+    if (this.orb.visible) {
+      const k = 1 + Math.sin(this.time * 18) * 0.12;
+      this.orb.scale.copy(this.orbScale).multiplyScalar(k);
+      this.orbMat.emissiveIntensity = 1.8 + Math.sin(this.time * 14) * 0.7;
+    }
     if (this.throwT >= 0) {
       this.throwT += dt;
       const u = this.throwT / 0.7;

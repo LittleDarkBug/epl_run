@@ -106,6 +106,12 @@ export class Rival {
     this.actor.play('slide');
   }
 
+  // Esquive d'une attaque : bascule sur une voie voisine libre.
+  sidestep(track: Track) {
+    const opts = [this.lane - 1, this.lane + 1].filter((l) => l >= -1 && l <= 1 && track.laneClear(l, this.s + 10, 8));
+    if (opts.length) this.moveTo(opts[Math.floor(Math.random() * opts.length)]);
+  }
+
   // Coup recu (obstacle, objet, attaque) : ralenti et titube.
   hit(time = 1.1) {
     if (this.hitCool > 0) return false;

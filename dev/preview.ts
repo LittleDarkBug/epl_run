@@ -35,6 +35,7 @@ if (who === 'player') {
   const c = new Chaser(ch.guardian, ch.android, ch.chaserClips, tex, tex, tex);
   c.play(anim as ChaserAnim);
   if (q.get('angry')) c.setAngry(1);
+  if (q.get('hold')) c.holdOrb(true);
   for (let i = 0; i < t * 30; i++) c.update(1 / 30, 20);
   obj = c.root;
 }
