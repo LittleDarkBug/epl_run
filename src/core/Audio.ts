@@ -665,6 +665,31 @@ export class Audio {
     if (near > 0.6) this.vibrate(70);
   }
 
+  // Objets : pli ramasse, lancers, Gardien sonne.
+  itemPickup() {
+    this.play(this.b('shimup'), { gain: 0.35, rate: 1.3 });
+    this.play(this.b('scribble'), { gain: 0.3, rate: 1.6 });
+  }
+
+  itemThrow(type: string) {
+    if (type === 'turbo') {
+      this.superJump();
+      return;
+    }
+    this.play(this.b(type === 'plane' ? 'flyby' : 'swish'), { gain: type === 'plane' ? 0.5 : 0.55, rate: type === 'stamp' ? 0.8 : 1.1 });
+  }
+
+  itemHit() {
+    this.play(this.b('stumble'), { gain: 0.6, rate: 1.15 });
+    this.play(this.b('scribble'), { gain: 0.35 });
+  }
+
+  robotBonk() {
+    this.play(this.b('stamp'), { gain: 0.9 });
+    this.play(this.b('rstep'), { gain: 0.8, rate: 1.4 });
+    if (this.ctx) this.play(this.b('chat0'), { gain: 0.4, rate: 0.7, when: this.ctx.currentTime + 0.15 });
+  }
+
   // Debut de defi : coup de sifflet et cuivres.
   raceStart() {
     if (!this.ctx) return;

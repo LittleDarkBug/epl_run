@@ -35,6 +35,7 @@ import { Input, Action } from './Input';
 import { Audio } from './Audio';
 import { Projectiles } from '../world/Projectiles';
 import { Rivals } from '../race/Rivals';
+import { Items, type ItemContext } from '../race/Items';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Installer, canFullscreen, enterFullscreen, exitFullscreen, isFullscreen, isStandalone } from './Platform';
 import { UI } from '../ui/UI';
@@ -146,6 +147,9 @@ export class Game {
   private projectiles!: Projectiles;
   // Course contre les autres etudiants.
   private rivals!: Rivals;
+  private items!: Items;
+  private turboT = 0;
+  private itemHinted = false;
   private rank = 1;
   private raceOn = false; // defi en cours
   private raceGo = false; // apres le compte a rebours
@@ -232,6 +236,8 @@ export class Game {
     });
     this.ui.on('menu-btn', () => this.restart(false));
     this.ui.on('pause-btn', () => this.pause());
+    this.ui.on('item-btn', () => this.useItem());
+    this.itemHinted = store.get('itemhint', 0) === 1;
     this.ui.on('resume', () => this.resume());
     this.ui.on('quit', () => this.restart(false));
     this.ui.on('mute', () => {
@@ -290,6 +296,7 @@ export class Game {
     }
     this.scene.add(this.world.group, this.campus.group, this.track.group, this.particles.group);
     this.bindTrackEvents();
+    this.bindItems();
     this.resize();
     this.resetRun();
     // Precompilation des shaders pour eviter les saccades au premier affichage.
@@ -374,6 +381,8 @@ export class Game {
     this.scene.add(this.player.root, this.player.shadowMesh);
     this.rivals = new Rivals(rivalBase, ch.playerClips, blob, this.path, this.track);
     this.scene.add(this.rivals.group);
+    this.items = new Items(this.path, this.track);
+    this.scene.add(this.items.group);
     const plate = makeLogoPlate(a.wordmark, 1024, 530, { bg: '#fbfaf6', pad: 0.07, stripes: true });
     const cape = makeCapeTexture(a.wordmark);
     this.chaser = new Chaser(ch.guardian, ch.android, ch.chaserClips, plate, cape, blob);
@@ -527,6 +536,90 @@ export class Game {
     window.setTimeout(() => this.ui.rankShow(false), 1800);
   }
 
+  // ---------- Objets d'attaque ----------
+
+  private itemCtx(): ItemContext {
+    return {
+      player: { s: this.dist, x: this.x, y: this.y, lane: this.lane, speed: this.speed, pos: this.pw },
+      chaserS: this.dist - this.chaserDist,
+      raceOn: this.raceOn,
+      rank: this.raceOn ? this.rank : 1,
+      rivals: this.rivals.active ? this.rivals.list : [],
+    };
+  }
+
+  private bindItems() {
+    const it = this.items;
+    it.onRollTick = () => this.audio.tick();
+    it.onPickup = (who, x, y, z) => {
+      this.particles.sparkle(x, y, z, [1, 0.8, 0.45], 18);
+      if (who === -1) this.audio.itemPickup();
+    };
+    it.onUse = (who, type) => {
+      this.audio.itemThrow(type);
+      if (who === -1 && type === 'turbo') {
+        this.turboT = 2.6;
+        this.ui.callout({ title: 'TURBO !' });
+      }
+    };
+    it.onTrail = (p, type) => {
+      const c = type === 'stamp' ? [1, 0.25, 0.12] : type === 'plane' ? [0.85, 0.92, 1] : [1, 1, 0.95];
+      this.particles.trail(p.x, p.y, p.z, c);
+    };
+    it.onHitRival = (r, type, p, owner) => {
+      r.hit(1.5);
+      r.actor.spin();
+      this.audio.itemHit();
+      this.particles.sparkle(p.x, p.y, p.z, type === 'chalk' ? [1, 1, 1] : [0.9, 0.95, 1], 26);
+      this.particles.impact(p.x, p.y - 1, p.z, 10);
+      if (owner === -1) this.ui.callout({ title: 'TOUCHÉ !', ms: 900 });
+    };
+    it.onHitPlayer = () => {
+      if (this.useShield()) return;
+      this.player.spin();
+      this.audio.itemHit();
+      this.particles.sparkle(this.pw.x, this.y + 1.2, this.pw.z, [1, 1, 1], 26);
+      this.ui.callout({ title: 'AÏE !', danger: true, ms: 900 });
+      this.onStumble(this.x, true);
+    };
+    it.onHitRobot = () => this.stunRobot();
+  }
+
+  // Tampon REFUSE recu par le Gardien : sonne, il recule, la jauge baisse.
+  private stunRobot() {
+    this.chaserDist = Math.max(this.chaserDist, 30);
+    this.warn = 0;
+    this.outTime = Math.max(0, this.outTime - 4);
+    this.projTimer += 7;
+    this.chaser.setDormant(true);
+    window.setTimeout(() => this.chaser.setDormant(false), 1500);
+    this.audio.robotBonk();
+    this.shake = Math.max(this.shake, 0.2);
+    this.ui.callout({ title: 'GARDIEN SONNÉ !', ms: 1400 });
+  }
+
+  private useItem() {
+    if (this.state !== 'playing') return;
+    const type = this.items.usePlayer(this.itemCtx());
+    if (!type) return;
+    if (type !== 'turbo') this.player.throwAnim();
+    if (!this.itemHinted) {
+      this.itemHinted = true;
+      store.set('itemhint', 1);
+    }
+  }
+
+  private updateItems(dt: number) {
+    const it = this.items;
+    it.update(dt, this.itemCtx());
+    if (this.turboT > 0 && Math.random() < 0.6) this.particles.trail(this.pw.x, this.y + 0.3 + Math.random() * 1.2, this.pw.z, [1, 0.85, 0.3]);
+    const rolling = it.rolling;
+    if (rolling) this.ui.item('roll', rolling);
+    else if (it.playerItem) this.ui.item('ready', it.playerItem, !this.itemHinted);
+    else this.ui.item('empty', null);
+    this.ui.incoming(it.incoming === null ? null : it.incoming / laneX(1));
+  }
+
   private updateRivals(dt: number) {
     const st = this.state;
     if (st === 'paused' || st === 'countdown') return;
@@ -669,6 +762,10 @@ export class Game {
     this.zone = 'street';
     this.path.reset();
     this.rivals.hide();
+    this.items.reset(this.dist);
+    this.turboT = 0;
+    this.ui.item('empty', null);
+    this.ui.incoming(null);
     this.raceOn = false;
     this.ui.challenge(false);
     this.ui.challengeIntro(null);
@@ -942,11 +1039,14 @@ export class Game {
     this.momentum = Math.max(0, this.momentum - RACE.momentumDecay * dt);
     if (this.slowT > 0) this.slowT -= dt;
     const base = SPEED.start + (SPEED.max - SPEED.start) * (1 - Math.exp(-this.dist / SPEED.rampDistance));
-    this.speed = damp(this.speed, base * (1 + this.momentum) * (this.slowT > 0 ? RACE.stumbleSlow : 1), 4, dt);
+    if (this.turboT > 0) this.turboT -= dt;
+    const turbo = this.turboT > 0 ? 0.24 : 0;
+    this.speed = damp(this.speed, base * (1 + this.momentum + turbo) * (this.slowT > 0 ? RACE.stumbleSlow : 1), this.turboT > 0 ? 6 : 4, dt);
     this.audio.setSpeed((this.speed - SPEED.start) / (SPEED.max - SPEED.start));
     this.simulate(dt);
     if (this.state === 'playing') this.updateProjectiles(dt);
     if (this.state === 'playing') this.updateRace(dt);
+    if (this.state === 'playing') this.updateItems(dt);
     this.score += this.speed * dt * 0.5 * this.multiplier();
     for (const k of Object.keys(this.timers) as PowerUpType[]) {
       if (this.timers[k] > 0) {
@@ -1256,6 +1356,7 @@ export class Game {
     this.audio.caught();
     this.ui.challenge(false);
     this.ui.challengeIntro(null);
+    this.ui.incoming(null);
   }
 
   private updateCaught(dt: number) {

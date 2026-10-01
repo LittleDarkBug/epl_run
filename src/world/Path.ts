@@ -32,6 +32,9 @@ const SCHEDULE: [Zone, number][] = [
   ['street', 5], ['corridor', 4], ['court', 5], ['street', 4], ['corridor', 5], ['court', 4], ['street', 5], ['court', 5],
 ];
 
+const _c = new THREE.Vector3();
+const _p = new THREE.Vector3();
+
 export class Path {
   readonly segs: Segment[] = [];
   private rng: () => number;
@@ -117,6 +120,16 @@ export class Path {
 
   pos(s: number, lat: number, out: THREE.Vector3, y = 0): THREE.Vector3 {
     return this.posOn(this.segAt(s), s, lat, out, y);
+  }
+
+  // Passage du troncon i au suivant : (s, lat) exprimes dans le repere du
+  // troncon suivant, sans saut de position (virage pris a l'entree du carrefour).
+  crossCorner(i: number, s: number, lat: number): [number, number] {
+    const seg = this.segs[i], next = this.segs[i + 1];
+    const c = this.posOn(seg, seg.s1, 0, _c);
+    const p = this.posOn(seg, s, lat, _p);
+    const rx = p.x - c.x, rz = p.z - c.z;
+    return [next.s0 + next.dx * rx + next.dz * rz, -next.dz * rx + next.dx * rz];
   }
 
   yawOf(seg: Segment): number {

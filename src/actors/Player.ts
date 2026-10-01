@@ -3,7 +3,7 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { applyBend } from '../render/curve';
 import { charMat, rimUniform } from './materials';
 import { damp } from '../core/rng';
-import { AX, AZ, graftSkinned, rotateBone } from './rigUtil';
+import { AX, AY, AZ, graftSkinned, rotateBone } from './rigUtil';
 import { tailorTrousers } from './tailor';
 
 // Afi, l'etudiante en fuite : modele riggé (maillage continu, textures de
@@ -38,6 +38,8 @@ export class Player {
   private glow: THREE.Mesh[] = [];
   private glowMat: THREE.MeshBasicMaterial;
   private flip = 0;
+  private throwT = -1; // geste de lancer en cours (s)
+  private spinT = -1; // tourbillon apres un projectile (s)
   private flipping = false;
   private lastPhase = 0;
   private time = 0;
@@ -146,6 +148,16 @@ export class Player {
     this.crestMat.needsUpdate = true;
   }
 
+  // Lancer d'objet : bras arme en arriere puis projete vers l'avant.
+  throwAnim() {
+    this.throwT = 0;
+  }
+
+  // Touche par un objet : tour complet sur soi-meme.
+  spin() {
+    this.spinT = 0;
+  }
+
   setSuperSneakers(on: boolean) {
     for (const g of this.glow) g.visible = on;
   }
@@ -198,6 +210,19 @@ export class Player {
     const target: Weights = { jump: a === 'jump' ? 1 : 0, slide: a === 'slide' ? 1 : 0, fall: a === 'fall' ? 1 : 0, stumble: a === 'stumble' ? Math.max(0, 1 - this.animTime / 0.55) : 0 };
     for (const k of Object.keys(target) as (keyof Weights)[]) this.w[k] = damp(this.w[k], target[k], k === 'fall' ? 6 : 16, dt);
     this.applyOverlays(vy, lean);
+    if (this.throwT >= 0) {
+      this.throwT += dt;
+      const u = this.throwT / 0.5;
+      if (u >= 1) this.throwT = -1;
+      else {
+        const B = this.bones;
+        const ang = u < 0.4 ? -2.5 * (u / 0.4) : -2.5 + 3.6 * ((u - 0.4) / 0.6);
+        const w = Math.min(1, (1 - u) * 4);
+        rotateBone(B.mixamorigRightArm, this.root, AX, ang * w);
+        rotateBone(B.mixamorigRightForeArm, this.root, AX, -0.7 * w * (u < 0.4 ? 1 : 0.3));
+        rotateBone(B.mixamorigSpine1, this.root, AY, (u < 0.4 ? 0.4 : -0.35) * w);
+      }
+    }
 
     // Salto (super baskets) et affaissement de glissade.
     this.body.position.y = -0.52 * this.w.slide - 0.35 * this.w.fall;
@@ -211,6 +236,15 @@ export class Player {
       this.body.position.y += Math.sin(this.flip / 2) * 0.5;
     } else {
       this.body.rotation.x = 0;
+    }
+    if (this.spinT >= 0) {
+      this.spinT += dt;
+      const u = Math.min(1, this.spinT / 0.55);
+      this.body.rotation.y = Math.PI * 2 * (1 - Math.pow(1 - u, 2));
+      if (u >= 1) {
+        this.spinT = -1;
+        this.body.rotation.y = 0;
+      }
     }
 
     for (const g of this.glow) {

@@ -24,6 +24,14 @@ const PU_INFO: Record<PowerUpType, { label: string; color: string; icon: string 
   },
 };
 
+// Icones des objets, dessinees a l'encre.
+const ITEM_ICONS: Record<string, string> = {
+  chalk: '<path d="M10 34l20-20 6 6-20 20z"/><path d="M30 14l4-4 6 6-4 4"/><path d="M8 40h6"/>',
+  plane: '<path d="M6 24l36-14-10 30-8-11z"/><path d="M24 29l18-19"/><path d="M24 29v9l5-6"/>',
+  stamp: '<path d="M19 6h10v10a4 4 0 0 1-2 3l3 5h7v6H11v-6h7l3-5a4 4 0 0 1-2-3z"/><path d="M10 38h28"/>',
+  turbo: '<path d="M8 30c6 0 9-8 14-8l6 6h10c3 0 4 3 2 5H8z"/><path d="M4 18h10M6 12h8M2 24h8"/>',
+};
+
 // Fleche dessinee a l'encre (tutoriel).
 const ARROW = '<svg class="ink-arrow" viewBox="0 0 64 32" aria-hidden="true"><path d="M5 17c12-3 25 1 41-3" /><path d="M37 5l14 10-13 11" /></svg>';
 
@@ -217,6 +225,24 @@ export class UI {
     $('ch-time').textContent = String(Math.max(0, Math.ceil(left)));
     ($('ch-bar') as HTMLElement).style.transform = `scaleX(${frac})`;
     el.classList.toggle('hot', hot);
+  }
+
+  // Case objet : vide, roulette (icone qui defile) ou pret a lancer.
+  item(state: 'empty' | 'roll' | 'ready', type: string | null, hint = false) {
+    const el = $('item-btn');
+    el.className = `item-btn ${state}${type === 'stamp' ? ' stamp' : ''}${hint ? ' hint' : ''}`;
+    if (type && el.dataset.type !== type) {
+      el.dataset.type = type;
+      $('item-icon').innerHTML = ITEM_ICONS[type] ?? '';
+    }
+    if (!type) el.dataset.type = '';
+  }
+
+  // Tir qui arrive de derriere : decalage lateral (-1..1) ou null.
+  incoming(side: number | null) {
+    const el = $('incoming');
+    el.classList.toggle('show', side !== null);
+    if (side !== null) el.style.left = `${50 + side * 26}%`;
   }
 
   rankShow(on: boolean) {

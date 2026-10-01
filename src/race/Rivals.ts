@@ -185,15 +185,10 @@ export class Rival {
   // carrefour (meme raccourci), position exprimee dans le nouveau repere.
   private corner(path: Path) {
     const seg = path.segs[this.segI];
-    const next = path.segs[this.segI + 1];
-    if (!next || this.s < seg.s1 - this.turnAt) return;
-    const c = path.posOn(seg, seg.s1, 0, new THREE.Vector3());
-    const p = path.posOn(seg, this.s, this.x, new THREE.Vector3());
-    const rx = p.x - c.x, rz = p.z - c.z;
-    const along = next.dx * rx + next.dz * rz;
-    const lat = -next.dz * rx + next.dx * rz;
+    if (!path.segs[this.segI + 1] || this.s < seg.s1 - this.turnAt) return;
+    const [s, lat] = path.crossCorner(this.segI, this.s, this.x);
     this.segI++;
-    this.s = this.prevS = next.s0 + along;
+    this.s = this.prevS = s;
     this.x = this.prevX = this.laneFrom = lat;
     this.lane = clamp(Math.round(lat / laneX(1)), -1, 1);
     this.laneT = 0;
@@ -248,15 +243,12 @@ export class Rival {
     const seg = path.segs[this.segI] ?? path.segAt(this.s);
     path.posOn(seg, this.s, this.x, tmp, this.y);
     const yaw = path.yawOf(seg);
-    // Lissage (virages, remise a zero) : pas de teleportation visible.
-    if (!this.placed || this.pos.distanceToSquared(tmp) > 36) {
-      this.pos.copy(tmp);
+    // Position exacte (les virages sont continus) ; seule l'orientation est lissee.
+    this.pos.copy(tmp);
+    if (!this.placed) {
       this.yaw = yaw;
       this.placed = true;
-    } else {
-      this.pos.lerp(tmp, 1 - Math.exp(-dt * 16));
-      this.yaw += Math.atan2(Math.sin(yaw - this.yaw), Math.cos(yaw - this.yaw)) * (1 - Math.exp(-dt * 10));
-    }
+    } else this.yaw += Math.atan2(Math.sin(yaw - this.yaw), Math.cos(yaw - this.yaw)) * (1 - Math.exp(-dt * 10));
     this.actor.root.position.copy(this.pos);
     this.actor.root.rotation.y = this.yaw;
     const lean = (laneX(this.lane) - this.x) * -0.5;
