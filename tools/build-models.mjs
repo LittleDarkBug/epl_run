@@ -14,6 +14,8 @@ const KEEP = {
   'android.glb': [],
   // Tenue EPL d'Afi (tools/blender/build_uniform.py).
   'uniform.glb': [],
+  // Cartable des rivaux (tools/blender/build_backpack.py).
+  'backpack.glb': [],
 };
 // Simplification par modele : [ratio, erreur].
 // Le maillage du X Bot n'est plus affiche (remplace par l'androide) : on ne

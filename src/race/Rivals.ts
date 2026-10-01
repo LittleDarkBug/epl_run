@@ -7,11 +7,13 @@ import { clamp, damp } from '../core/rng';
 import type { Path } from '../world/Path';
 import type { ObstacleView, Track } from '../world/Track';
 import { SPECS, STAGE_H } from '../world/ObstacleMeshes';
+import { attachToBone, boneWorldPos } from '../actors/rigUtil';
+import { charMat } from '../actors/materials';
 
 // D'autres etudiants (d'autres ecoles, chacun dans sa propre fuite) sur le
 // meme parcours. Chacun reprend le modele d'Afi dans sa tenue d'origine
 // (memes animations), differencie par la couleur de ses vetements, de ses
-// accessoires, sa carnation et sa taille.
+// accessoires, sa carnation, sa taille et un cartable modele dans Blender.
 // Une IA simple esquive les obstacles (voie, saut, glissade) et se trompe
 // parfois ; leur vitesse s'ajuste pour garder le peloton groupe.
 
@@ -313,6 +315,29 @@ function lookTexture(src: THREE.Texture, look: RivalLook): THREE.Texture {
   return t;
 }
 
+// Cartable modele dans Blender (tools/blender/build_backpack.py), teinte a la
+// couleur du rival et accroche a son dos.
+function addBackpack(actor: Player, model: THREE.Object3D, color: string) {
+  let spine: THREE.Object3D | null = null;
+  actor.root.traverse((o) => { if (!spine && o.name === 'mixamorigSpine2') spine = o; });
+  if (!spine) return;
+  const bag = model.clone(true);
+  const mats: Record<string, THREE.Material> = {
+    bag: charMat(color, { r: 0.78, rim: 0.5 }),
+    trim: charMat('#1b1f29', { r: 0.7, rim: 0.4 }),
+    zip: charMat('#c9c4bc', { r: 0.35, m: 1, rim: 0.3 }),
+  };
+  bag.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    m.material = mats[(m.material as THREE.Material).name] ?? mats.bag;
+    m.castShadow = true;
+  });
+  // Repere de la racine : le coureur regarde -z, le dos est vers +z.
+  const sp = boneWorldPos(spine, actor.root);
+  attachToBone(bag, spine, actor.root, new THREE.Vector3(0, sp.y + 0.11, sp.z + 0.06));
+}
+
 export class Rivals {
   readonly list: Rival[] = [];
   readonly group = new THREE.Group();
@@ -320,7 +345,7 @@ export class Rivals {
   private time = 0;
 
   // `base` : copie intacte du modele d'Afi (avant uniforme et retouches).
-  constructor(base: THREE.Object3D, clips: PlayerClips, blob: THREE.Texture, private path: Path, private track: Track) {
+  constructor(base: THREE.Object3D, clips: PlayerClips, blob: THREE.Texture, private path: Path, private track: Track, backpack?: THREE.Object3D) {
     let bodyTex: THREE.Texture | null = null;
     base.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
@@ -329,6 +354,7 @@ export class Rivals {
     for (const look of RIVAL_LOOKS) {
       const scene = cloneSkinned(base);
       const actor = new Player({ scene } as GLTF, clips, blob, undefined, bodyTex ? lookTexture(bodyTex, look) : undefined);
+      if (backpack) addBackpack(actor, backpack, look.color);
       const r = new Rival(look, actor);
       this.list.push(r);
       this.group.add(actor.root, actor.shadowMesh);

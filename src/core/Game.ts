@@ -385,7 +385,7 @@ export class Game {
     this.player = new Player(ch.student, ch.playerClips, blob, ch.uniform, ch.afiBody, ch.afiRough);
     this.player.setCrest(makeLogoPlate(a.wordmark, 512, 426, { bg: '#fbfaf6', pad: 0.1 }));
     this.scene.add(this.player.root, this.player.shadowMesh);
-    this.rivals = new Rivals(rivalBase, ch.playerClips, blob, this.path, this.track);
+    this.rivals = new Rivals(rivalBase, ch.playerClips, blob, this.path, this.track, ch.backpack.scene);
     this.scene.add(this.rivals.group);
     this.items = new Items(this.path, this.track);
     this.scene.add(this.items.group);
