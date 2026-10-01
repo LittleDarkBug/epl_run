@@ -665,6 +665,18 @@ export class Audio {
     if (near > 0.6) this.vibrate(70);
   }
 
+  // Depassement (montee) ou perte d'une place.
+  rankChange(up: boolean) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (up) {
+      [7, 9].forEach((d, k) => this.play(this.b(`bal${SCALE[d]}`), { gain: 0.5, when: t + k * 0.07, echo: 0.2 }));
+    } else {
+      this.play(this.b('tom13'), { gain: 0.45 });
+      this.play(this.b(`bal${SCALE[2]}`), { gain: 0.3, when: t + 0.05 });
+    }
+  }
+
   // Interface.
   tick() {
     this.play(this.b('uitick'), { gain: 0.4 });

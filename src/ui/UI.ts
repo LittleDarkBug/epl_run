@@ -131,6 +131,25 @@ export class UI {
   }
 
   private zoneTimer = 0;
+  private lastRank = 0;
+
+  // Position (1 = en tete), nombre de coureurs, jauge hors top 2 (0..1).
+  rank(n: number, total: number, gauge: number) {
+    const el = $('rank');
+    if (n !== this.lastRank) {
+      $('rank-n').textContent = String(n);
+      $('rank-suf').textContent = n === 1 ? 'er' : 'e';
+      $('rank-of').textContent = '/' + total;
+      if (this.lastRank) {
+        el.classList.remove('up', 'down');
+        void el.offsetWidth;
+        el.classList.add(n < this.lastRank ? 'up' : 'down');
+      }
+      this.lastRank = n;
+    }
+    el.classList.toggle('out', n > 2);
+    ($('rank-gauge') as unknown as SVGCircleElement).style.strokeDashoffset = String(220 * (1 - gauge));
+  }
   private threatTimer = 0;
 
   // Carte d'alerte : le Gardien lance un formulaire rejete.

@@ -34,10 +34,12 @@ import type { BakedAsset } from '../world/assets';
 import { Input, Action } from './Input';
 import { Audio } from './Audio';
 import { Projectiles } from '../world/Projectiles';
+import { Rivals } from '../race/Rivals';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Installer, canFullscreen, enterFullscreen, exitFullscreen, isFullscreen, isStandalone } from './Platform';
 import { UI } from '../ui/UI';
 import { StoryPlayer, Shot } from '../ui/Story';
-import { CHASER, PLAYER, POWERUP_TIME, SPEED, laneX } from '../config';
+import { CHASER, PLAYER, POWERUP_TIME, RACE, SPEED, laneX } from '../config';
 import { clamp, damp, easeInOutCubic, easeOutCubic, lerp } from './rng';
 
 type State = 'loading' | 'menu' | 'story' | 'intro' | 'playing' | 'paused' | 'countdown' | 'caught' | 'over';
@@ -142,6 +144,12 @@ export class Game {
   private segIdx = 0;
   private turnQueued = 0;
   private projectiles!: Projectiles;
+  // Course contre les autres etudiants.
+  private rivals!: Rivals;
+  private rank = 1;
+  private outTime = 0; // temps cumule hors du top 2
+  private momentum = 0; // elan gagne en ramassant des cahiers
+  private slowT = 0; // ralentissement apres un faux pas
   private projTimer = 0;
   private projSeen = 0;
   private laneDur: number = PLAYER.laneChangeTime;
@@ -353,9 +361,13 @@ export class Game {
   private setupActors(a: Assets) {
     const blob = makeBlobShadow();
     const ch = a.characters;
+    // Copie intacte du modele pour les rivaux, avant l'uniforme d'Afi.
+    const rivalBase = cloneSkinned(ch.student.scene);
     this.player = new Player(ch.student, ch.playerClips, blob, ch.uniform, ch.afiBody, ch.afiRough);
     this.player.setCrest(makeLogoPlate(a.wordmark, 512, 426, { bg: '#fbfaf6', pad: 0.1 }));
     this.scene.add(this.player.root, this.player.shadowMesh);
+    this.rivals = new Rivals(rivalBase, ch.playerClips, blob, this.path, this.track);
+    this.scene.add(this.rivals.group);
     const plate = makeLogoPlate(a.wordmark, 1024, 530, { bg: '#fbfaf6', pad: 0.07, stripes: true });
     const cape = makeCapeTexture(a.wordmark);
     this.chaser = new Chaser(ch.guardian, ch.android, ch.chaserClips, plate, cape, blob);
@@ -423,6 +435,33 @@ export class Game {
     return true;
   }
 
+  // Classement et regle du top 2 : hors du podium trop longtemps, le
+  // Gardien rattrape le joueur (la jauge rapproche le robot).
+  private updateRace(dt: number) {
+    const rank = this.rivals.rankOf(this.dist);
+    if (rank !== this.rank) {
+      this.audio.rankChange(rank < this.rank);
+      this.rank = rank;
+    }
+    const before = this.outTime / RACE.outLimit;
+    if (this.runTime > RACE.grace && rank > RACE.top) this.outTime += dt;
+    else this.outTime = Math.max(0, this.outTime - dt * 1.5);
+    const gauge = clamp(this.outTime / RACE.outLimit, 0, 1);
+    if (before < 0.5 && gauge >= 0.5) {
+      this.audio.whistle();
+      this.ui.toast('REVIENS DANS LE TOP 2 !', true, 1300);
+    }
+    this.ui.rank(rank, RACE.runners, gauge);
+    if (gauge >= 1) this.caught('Hors du top 2 trop longtemps : le Gardien t\'a rattrapé.');
+  }
+
+  private updateRivals(dt: number) {
+    const st = this.state;
+    if (st === 'paused' || st === 'countdown') return;
+    const running = st === 'playing' || st === 'caught' || (st === 'intro' && this.stateTime > 0.35);
+    this.rivals.update(dt, this.dist, this.lane, running, st === 'intro' || st === 'playing' || st === 'caught');
+  }
+
   private updateProjectiles(dt: number) {
     const pr = this.projectiles;
     if (this.state === 'playing') {
@@ -447,6 +486,7 @@ export class Game {
   private bindTrackEvents() {
     this.track.onCoin = (x, y, z) => {
       this.coins++;
+      this.momentum = Math.min(RACE.momentumMax, this.momentum + RACE.momentumPerCoin);
       this.score += 5 * this.multiplier();
       this.audio.coin();
       this.particles.sparkle(x, y, z, [1, 0.85, 0.45], 5);
@@ -540,6 +580,10 @@ export class Game {
     this.score = 0;
     this.coins = 0;
     this.timers = { magnet: 0, sneakers: 0, double: 0 };
+    this.outTime = 0;
+    this.momentum = 0;
+    this.slowT = 0;
+    this.rank = 2;
     this.chaserDist = 4.4;
     this.chaserX = 0.6;
     this.warn = 0;
@@ -552,6 +596,7 @@ export class Game {
     this.projTimer = 6;
     this.zone = 'street';
     this.path.reset();
+    this.rivals.reset(this.dist);
     this.segIdx = this.path.segIndexAt(this.dist);
     this.turnQueued = 0;
     this.yaw = this.camYaw = this.path.yawOf(this.path.segs[this.segIdx]);
@@ -785,6 +830,7 @@ export class Game {
       case 'paused':
         break;
     }
+    this.updateRivals(dt);
     if (this.state !== 'paused' && this.state !== 'countdown') this.particles.update(dt, 0);
     this.followSun();
     this.updateCamera(realDt);
@@ -802,6 +848,7 @@ export class Game {
     const t = this.stateTime;
     if (t > 0.35) {
       this.player.play('run');
+      if (this.rivals.list[0].actor.anim === 'idle') this.rivals.start();
       this.speed = lerp(0, SPEED.start, easeOutCubic(clamp((t - 0.35) / 1.4, 0, 1)));
     }
     if (t > 1.05) this.chaser.play('run');
@@ -815,10 +862,15 @@ export class Game {
 
   private updatePlaying(dt: number) {
     this.runTime += dt;
-    this.speed = SPEED.start + (SPEED.max - SPEED.start) * (1 - Math.exp(-this.dist / SPEED.rampDistance));
+    // Vitesse du parcours, elan des cahiers, ralentissement apres un faux pas.
+    this.momentum = Math.max(0, this.momentum - RACE.momentumDecay * dt);
+    if (this.slowT > 0) this.slowT -= dt;
+    const base = SPEED.start + (SPEED.max - SPEED.start) * (1 - Math.exp(-this.dist / SPEED.rampDistance));
+    this.speed = damp(this.speed, base * (1 + this.momentum) * (this.slowT > 0 ? RACE.stumbleSlow : 1), 4, dt);
     this.audio.setSpeed((this.speed - SPEED.start) / (SPEED.max - SPEED.start));
     this.simulate(dt);
     if (this.state === 'playing') this.updateProjectiles(dt);
+    if (this.state === 'playing') this.updateRace(dt);
     this.score += this.speed * dt * 0.5 * this.multiplier();
     for (const k of Object.keys(this.timers) as PowerUpType[]) {
       if (this.timers[k] > 0) {
@@ -943,14 +995,16 @@ export class Game {
     // Gardien.
     if (this.warn > 0) this.warn -= dt;
     const introHold = this.state === 'intro' ? (this.stateTime < 1.05 ? 4.4 : CHASER.farDistance) : null;
-    const target = introHold ?? (this.warn > 0 ? CHASER.nearDistance : CHASER.farDistance);
-    const rate = this.warn > 0 ? 3 : this.state === 'intro' ? 2.5 : 0.45;
+    const gauge = clamp(this.outTime / RACE.outLimit, 0, 1);
+    const target = introHold ?? (this.warn > 0 ? CHASER.nearDistance : lerp(CHASER.farDistance, 4.0, gauge));
+    const rate = this.warn > 0 ? 3 : this.state === 'intro' ? 2.5 : gauge > 0 ? 1.4 : 0.45;
     this.chaserDist = damp(this.chaserDist, target, rate, dt);
     if (this.state === 'intro' && this.stateTime < 1.05) this.chaserDist = 4.4;
     this.chaserX = damp(this.chaserX, this.x + (this.x <= 0 ? 1.4 : -1.4), 3, dt);
-    this.chaser.setAngry(this.warn > 0 ? 1 : 0);
-    this.audio.setIntensity(this.warn > 0 ? 1 : 0);
-    this.ui.setDanger(this.warn > 0);
+    const threat = Math.max(this.warn > 0 ? 1 : 0, gauge);
+    this.chaser.setAngry(threat);
+    this.audio.setIntensity(threat);
+    this.ui.setDanger(threat > 0.5);
 
     this.placeActors(dt, ground, true);
     // Masque le Gardien quand il traverserait la camera.
@@ -1063,6 +1117,8 @@ export class Game {
   }
 
   private onStumble(fromX: number, quiet = false) {
+    this.slowT = RACE.stumbleSlowTime;
+    this.momentum *= 0.3;
     // Retour sur la voie de depart.
     this.lane = clamp(Math.round(fromX / laneX(1)), -1, 1);
     this.laneFromX = this.x;

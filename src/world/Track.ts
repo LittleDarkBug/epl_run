@@ -13,6 +13,13 @@ export type PowerUpType = 'magnet' | 'sneakers' | 'double';
 export type DossierPiece = 'stamp' | 'copy' | 'signature';
 export type BonusType = PowerUpType | 'diploma' | DossierPiece;
 
+export interface ObstacleView {
+  readonly type: ObstacleType;
+  readonly x: number;
+  readonly s: number;
+  readonly len: number;
+}
+
 interface Obstacle {
   type: ObstacleType;
   lane: number;
@@ -494,6 +501,33 @@ export class Track {
       }
       o.hit = true;
       return { kind: 'stumble', type: o.type, fromX: p.prevX };
+    }
+    return { kind: 'none' };
+  }
+
+  // Pour l'IA des rivaux : obstacles qui coupent [s0, s1] (lecture seule).
+  obstaclesIn(s0: number, s1: number, out: ObstacleView[] = []): ObstacleView[] {
+    out.length = 0;
+    for (const o of this.obstacles) if (o.s + o.len > s0 && o.s < s1) out.push(o);
+    return out;
+  }
+
+  // Test de collision sans effet de bord (rivaux).
+  probe(p: PlayerProbe, hw = PLAYER.halfWidth): HitResult {
+    const hd = PLAYER.halfDepth;
+    for (const o of this.obstacles) {
+      const spec = SPECS[o.type];
+      if (spec.pit) {
+        if (p.dist > o.s + 0.3 && p.dist < o.s + o.len - 0.3 && p.y < 0.05) return { kind: 'fall' };
+        continue;
+      }
+      if (!(p.dist + hd > o.s && p.prevDist - hd < o.s + o.len)) continue;
+      if (Math.abs(p.x - o.x) >= spec.halfW + hw) continue;
+      let solidTop = spec.y1;
+      if (spec.ramp) solidTop = spec.top! * clamp((p.dist - o.s) / o.len, 0, 1);
+      const onTop = (spec.top !== undefined || spec.low) && p.y >= solidTop - (spec.ramp ? 0.9 : 0.4);
+      if (onTop || spec.ramp) continue;
+      if (p.y < solidTop && p.y + p.height > spec.y0) return { kind: 'stumble', type: o.type, fromX: p.prevX };
     }
     return { kind: 'none' };
   }

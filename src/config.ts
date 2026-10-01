@@ -47,3 +47,16 @@ export const BUS_HEIGHT = 2.9;
 export function laneX(lane: number): number {
   return lane * LANE_WIDTH;
 }
+
+// Course contre les autres etudiants (regle du top 2, elan des cahiers).
+export const RACE = {
+  runners: 5,
+  top: 2,
+  outLimit: 10, // secondes cumulees hors du top 2 avant la capture
+  grace: 8, // secondes de depart sans penalite
+  momentumPerCoin: 0.006,
+  momentumMax: 0.12,
+  momentumDecay: 0.025,
+  stumbleSlow: 0.72,
+  stumbleSlowTime: 1.3,
+};

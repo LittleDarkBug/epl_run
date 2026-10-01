@@ -61,7 +61,7 @@ export class Player {
         m.frustumCulled = false;
         const src = m.material as THREE.MeshStandardMaterial;
         const mat = src.clone();
-        if (bodyTex && mat.map) mat.map = bodyTex;
+        if (bodyTex && mat.map && /Body/.test(src.name)) mat.map = bodyTex;
         if (roughTex && mat.roughnessMap) mat.roughnessMap = roughTex;
         if (roughTex && mat.metalnessMap) mat.metalnessMap = roughTex;
         // Filtrage anisotrope : textures nettes meme vues de biais.
@@ -88,7 +88,10 @@ export class Player {
       const rest = new Map<string, THREE.Object3D>();
       uniform.scene.updateMatrixWorld(true);
       uniform.scene.traverse((o) => { if ((o as THREE.Bone).isBone) rest.set(o.name, o); });
-      tailorTrousers(body, rest);
+      // Geometrie propre a Afi : les clones (rivaux) gardent la coupe d'origine.
+      const own = body as THREE.SkinnedMesh;
+      own.geometry = own.geometry.clone();
+      tailorTrousers(own, rest);
       const mats: Record<string, THREE.Material> = {
         navy: charMat('#1a2544', { r: 0.78, rim: 0.7 }),
         shirt: charMat('#eef0f3', { r: 0.7, rim: 0.4 }),
