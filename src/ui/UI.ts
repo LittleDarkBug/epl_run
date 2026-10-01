@@ -133,6 +133,21 @@ export class UI {
   private zoneTimer = 0;
   private lastRank = 0;
 
+  rankShow(on: boolean) {
+    $('rank').classList.toggle('hidden-rank', !on);
+    if (!on) this.lastRank = 0;
+  }
+
+  // Bandeau d'annonce (meme style que les zones) : defis.
+  banner(sub: string, name: string, ms = 2400) {
+    $('zone-sub').textContent = sub;
+    $('zone-name').textContent = name;
+    const el = $('zone-banner');
+    el.classList.add('show');
+    clearTimeout(this.zoneTimer);
+    this.zoneTimer = window.setTimeout(() => el.classList.remove('show'), ms);
+  }
+
   // Position (1 = en tete), nombre de coureurs, jauge hors top 2 (0..1).
   rank(n: number, total: number, gauge: number) {
     const el = $('rank');

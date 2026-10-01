@@ -147,6 +147,9 @@ export class Game {
   // Course contre les autres etudiants.
   private rivals!: Rivals;
   private rank = 1;
+  private raceOn = false; // defi en cours
+  private raceT = 0;
+  private nextRaceAt: number = RACE.firstAt;
   private outTime = 0; // temps cumule hors du top 2
   private momentum = 0; // elan gagne en ramassant des cahiers
   private slowT = 0; // ralentissement apres un faux pas
@@ -435,16 +438,24 @@ export class Game {
     return true;
   }
 
-  // Classement et regle du top 2 : hors du podium trop longtemps, le
-  // Gardien rattrape le joueur (la jauge rapproche le robot).
+  // Defis : de temps en temps, deux rivaux surgissent pour une course de
+  // ~35 s. Hors du top 2 trop longtemps, le Gardien rattrape le joueur (la
+  // jauge rapproche le robot). Le reste du temps, le jeu est inchange.
   private updateRace(dt: number) {
+    if (!this.raceOn) {
+      const seg = this.path.segs[this.segIdx];
+      if (this.dist >= this.nextRaceAt && seg.s1 - this.dist > 90) this.startRace();
+      else this.outTime = Math.max(0, this.outTime - dt * 1.5);
+      return;
+    }
+    this.raceT += dt;
     const rank = this.rivals.rankOf(this.dist);
     if (rank !== this.rank) {
       this.audio.rankChange(rank < this.rank);
       this.rank = rank;
     }
     const before = this.outTime / RACE.outLimit;
-    if (this.runTime > RACE.grace && rank > RACE.top) this.outTime += dt;
+    if (this.raceT > RACE.grace && rank > RACE.top) this.outTime += dt;
     else this.outTime = Math.max(0, this.outTime - dt * 1.5);
     const gauge = clamp(this.outTime / RACE.outLimit, 0, 1);
     if (before < 0.5 && gauge >= 0.5) {
@@ -452,14 +463,42 @@ export class Game {
       this.ui.toast('REVIENS DANS LE TOP 2 !', true, 1300);
     }
     this.ui.rank(rank, RACE.runners, gauge);
-    if (gauge >= 1) this.caught('Hors du top 2 trop longtemps : le Gardien t\'a rattrapé.');
+    if (gauge >= 1) {
+      this.caught('Hors du top 2 trop longtemps : le Gardien t\'a rattrapé.');
+      return;
+    }
+    if (this.raceT >= RACE.duration) this.endRace(rank);
+  }
+
+  private startRace() {
+    this.raceOn = true;
+    this.raceT = 0;
+    this.outTime = 0;
+    this.rank = this.rivals.list.length + 1;
+    this.rivals.enter(this.dist, this.speed);
+    this.ui.banner('Défi', 'RESTE DANS LE TOP 2 !', 2600);
+    this.ui.rank(this.rank, RACE.runners, 0);
+    this.ui.rankShow(true);
+    this.audio.raceStart();
+  }
+
+  private endRace(rank: number) {
+    this.raceOn = false;
+    this.nextRaceAt = this.dist + RACE.every[0] + Math.random() * (RACE.every[1] - RACE.every[0]);
+    const pts = (rank === 1 ? 500 : rank === 2 ? 200 : 0) * this.multiplier();
+    this.score += pts;
+    this.ui.banner('Fin du défi', rank === 1 ? `1ER ! +${pts}` : rank === 2 ? `2E ! +${pts}` : 'DERNIER...', 2400);
+    this.audio.raceEnd(rank <= 2);
+    if (rank === 1) this.ui.flashWhite(0.3);
+    this.rivals.leave();
+    window.setTimeout(() => this.ui.rankShow(false), 1800);
   }
 
   private updateRivals(dt: number) {
     const st = this.state;
     if (st === 'paused' || st === 'countdown') return;
-    const running = st === 'playing' || st === 'caught' || (st === 'intro' && this.stateTime > 0.35);
-    this.rivals.update(dt, this.dist, this.lane, running, st === 'intro' || st === 'playing' || st === 'caught');
+    const running = st === 'playing' || st === 'caught';
+    this.rivals.update(dt, this.dist, this.lane, running, running);
   }
 
   private updateProjectiles(dt: number) {
@@ -596,7 +635,10 @@ export class Game {
     this.projTimer = 6;
     this.zone = 'street';
     this.path.reset();
-    this.rivals.reset(this.dist);
+    this.rivals.hide();
+    this.raceOn = false;
+    this.nextRaceAt = this.dist + RACE.firstAt;
+    this.ui.rankShow(false);
     this.segIdx = this.path.segIndexAt(this.dist);
     this.turnQueued = 0;
     this.yaw = this.camYaw = this.path.yawOf(this.path.segs[this.segIdx]);
@@ -848,7 +890,6 @@ export class Game {
     const t = this.stateTime;
     if (t > 0.35) {
       this.player.play('run');
-      if (this.rivals.list[0].actor.anim === 'idle') this.rivals.start();
       this.speed = lerp(0, SPEED.start, easeOutCubic(clamp((t - 0.35) / 1.4, 0, 1)));
     }
     if (t > 1.05) this.chaser.play('run');

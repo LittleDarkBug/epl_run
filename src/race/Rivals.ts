@@ -7,19 +7,16 @@ import { clamp, damp } from '../core/rng';
 import type { Path } from '../world/Path';
 import type { ObstacleView, Track } from '../world/Track';
 import { SPECS, STAGE_H } from '../world/ObstacleMeshes';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { attachToBone, boneWorldPos } from '../actors/rigUtil';
-import { applyBend } from '../render/curve';
 
 // D'autres etudiants (d'autres ecoles, chacun dans sa propre fuite) sur le
 // meme parcours. Chacun reprend le modele d'Afi dans sa tenue d'origine
 // (memes animations), differencie par la couleur de ses vetements, de ses
-// accessoires, sa carnation, sa taille et un cartable colore.
+// accessoires, sa carnation et sa taille.
 // Une IA simple esquive les obstacles (voie, saut, glissade) et se trompe
 // parfois ; leur vitesse s'ajuste pour garder le peloton groupe.
 
 export interface RivalLook {
-  color: string; // vetements (pantalon) et cartable
+  color: string; // vetements (pantalon)
   accent: string; // lunettes et casque
   skin: number; // multiplicateur de luminosite de la peau
   scale: number;
@@ -27,11 +24,10 @@ export interface RivalLook {
   mistakes: number; // probabilite de rater un obstacle
 }
 
+// Deux rivaux : en format vertical, plus de coureurs encombrerait l'ecran.
 export const RIVAL_LOOKS: RivalLook[] = [
   { color: '#d8452f', accent: '#2f7bff', skin: 0.82, scale: 1.06, skill: 0.012, mistakes: 0.07 },
   { color: '#2e9e5b', accent: '#ffd23a', skin: 1.12, scale: 0.97, skill: 0.006, mistakes: 0.06 },
-  { color: '#7b4fd6', accent: '#19d3c5', skin: 0.9, scale: 1.08, skill: -0.004, mistakes: 0.09 },
-  { color: '#e7e1d2', accent: '#ff4fa3', skin: 1.05, scale: 1.0, skill: 0.0, mistakes: 0.08 },
 ];
 
 const baseSpeed = (s: number) => SPEED.start + (SPEED.max - SPEED.start) * (1 - Math.exp(-Math.max(0, s) / SPEED.rampDistance));
@@ -54,6 +50,7 @@ export class Rival {
   private hitCool = 0;
   boost = 0;
   speed = 0;
+  leaving = false; // fin du defi : il decroche et disparait
   private phase = Math.random() * 10;
   private judged = new WeakSet<object>();
   private failing = new WeakSet<object>();
@@ -79,6 +76,7 @@ export class Rival {
     this.laneT = 1;
     this.y = this.vy = 0;
     this.slide = this.stun = this.hitCool = this.boost = 0;
+    this.leaving = false;
     this.placed = false;
     this.actor.play('idle');
   }
@@ -188,7 +186,7 @@ export class Rival {
     const rubber = d > 0 ? 0.975 - clamp(d / 35, 0, 1) * 0.1 : 0.985 + clamp(-d / 30, 0, 1) * 0.14;
     const pace = 1 + this.look.skill + 0.035 * Math.sin(time * 0.23 + this.phase) + 0.015 * Math.sin(time * 0.71 + this.phase * 2);
     const stunK = this.stun > 0 ? 0.55 : 1;
-    const target = baseSpeed(this.s) * pace * rubber * stunK * (1 + this.boost);
+    const target = baseSpeed(this.s) * (this.leaving ? 0.62 : pace * rubber) * stunK * (1 + this.boost);
     this.speed = damp(this.speed, target, this.stun > 0 ? 8 : 2.5, dt);
     this.s += this.speed * dt;
     if (this.stun > 0) this.stun -= dt;
@@ -292,26 +290,6 @@ function lookTexture(src: THREE.Texture, look: RivalLook): THREE.Texture {
   return t;
 }
 
-// Cartable colore porte dans le dos (repere visuel de chaque rival).
-function addBackpack(actor: Player, color: string) {
-  let spine: THREE.Object3D | null = null;
-  actor.root.traverse((o) => { if (!spine && o.name === 'mixamorigSpine2') spine = o; });
-  if (!spine) return;
-  const g = new THREE.Group();
-  const mat = applyBend(new THREE.MeshStandardMaterial({ color, roughness: 0.55 }));
-  const dark = applyBend(new THREE.MeshStandardMaterial({ color: '#1b2233', roughness: 0.7 }));
-  const bag = new THREE.Mesh(new RoundedBoxGeometry(0.28, 0.34, 0.13, 2, 0.03), mat);
-  const flap = new THREE.Mesh(new RoundedBoxGeometry(0.285, 0.13, 0.136, 2, 0.02), dark);
-  flap.position.set(0, 0.12, 0);
-  const pocket = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.12, 0.04, 2, 0.015), mat);
-  pocket.position.set(0, -0.07, 0.075);
-  g.add(bag, flap, pocket);
-  for (const m of [bag, flap, pocket]) m.castShadow = true;
-  // Repere de la racine : le coureur regarde -z, le dos est vers +z.
-  const sp = boneWorldPos(spine, actor.root);
-  attachToBone(g, spine, actor.root, new THREE.Vector3(0, sp.y - 0.08, sp.z + 0.17));
-}
-
 export class Rivals {
   readonly list: Rival[] = [];
   readonly group = new THREE.Group();
@@ -328,25 +306,49 @@ export class Rivals {
     for (const look of RIVAL_LOOKS) {
       const scene = cloneSkinned(base);
       const actor = new Player({ scene } as GLTF, clips, blob, undefined, bodyTex ? lookTexture(bodyTex, look) : undefined);
-      addBackpack(actor, look.color);
       const r = new Rival(look, actor);
       this.list.push(r);
       this.group.add(actor.root, actor.shadowMesh);
     }
   }
 
-  // Ligne de depart : autour du joueur, sur les voies laterales.
-  reset(s: number) {
-    const slots: [number, number][] = [[2.4, -1], [-1.0, 1], [-2.2, -1], [-3.4, 1]];
-    this.list.forEach((r, i) => r.reset(s + slots[i][0], slots[i][1]));
+  // Les rivaux ne courent que pendant les defis (portions temporaires).
+  active = false;
+
+  // Debut d'un defi : ils arrivent de derriere en sprint, sur les voies laterales.
+  enter(s: number, speed: number) {
+    const slots: [number, number][] = [[-13, -1], [-17, 1]];
+    this.list.forEach((r, i) => {
+      r.reset(s + slots[i][0], slots[i][1]);
+      r.speed = speed;
+      r.boost = 0.32;
+      r.actor.play('run');
+    });
+    this.active = true;
   }
 
-  start() {
-    for (const r of this.list) r.actor.play('run');
+  // Fin du defi : ils decrochent puis disparaissent.
+  leave() {
+    for (const r of this.list) r.leaving = true;
+  }
+
+  hide() {
+    this.active = false;
+    for (const r of this.list) {
+      r.leaving = false;
+      r.visible = false;
+      r.actor.root.visible = false;
+      r.actor.shadowMesh.visible = false;
+    }
   }
 
   update(dt: number, playerS: number, playerLane: number, running: boolean, show: boolean) {
     this.time += dt;
+    if (!this.active) return;
+    if (this.list.every((r) => r.leaving && r.s - playerS < -30)) {
+      this.hide();
+      return;
+    }
     for (const r of this.list) {
       let ground = 0;
       if (running) {

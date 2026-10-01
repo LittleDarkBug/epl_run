@@ -50,10 +50,13 @@ export function laneX(lane: number): number {
 
 // Course contre les autres etudiants (regle du top 2, elan des cahiers).
 export const RACE = {
-  runners: 5,
+  runners: 3, // Afi et deux rivaux
   top: 2,
   outLimit: 10, // secondes cumulees hors du top 2 avant la capture
-  grace: 8, // secondes de depart sans penalite
+  grace: 5, // secondes en debut de defi sans penalite
+  firstAt: 450, // premier defi (metres)
+  every: [700, 1000], // ecart entre deux defis (metres)
+  duration: 35, // duree d'un defi (secondes)
   momentumPerCoin: 0.006,
   momentumMax: 0.12,
   momentumDecay: 0.025,

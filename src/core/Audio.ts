@@ -665,6 +665,19 @@ export class Audio {
     if (near > 0.6) this.vibrate(70);
   }
 
+  // Debut de defi : coup de sifflet et cuivres.
+  raceStart() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.play(this.b('whistle'), { gain: 0.4 });
+    [0, 3].forEach((c, k) => this.play(this.b(`brass${c}`), { gain: 0.45, when: t + 0.35 + k * 0.18, verb: 0.3 }));
+  }
+
+  raceEnd(win: boolean) {
+    if (win) this.newRecord();
+    else this.rankChange(false);
+  }
+
   // Depassement (montee) ou perte d'une place.
   rankChange(up: boolean) {
     if (!this.ctx) return;
