@@ -153,6 +153,9 @@ export class Game {
   private turboT = 0;
   private itemHinted = false;
   private rank = 1;
+  // Directeur : un seul grand evenement a la fois (defi, attaque du Gardien),
+  // avec un temps de respiration entre deux.
+  private busyUntil = 0;
   private raceOn = false; // defi en cours
   private raceGo = false; // apres le compte a rebours
   private raceCount = 0;
@@ -165,7 +168,7 @@ export class Game {
   private projTimer = 0;
   private projSeen = 0;
   // Attaque du Gardien en cours : charge visible, lancer depuis sa main.
-  private robotAtk: { t: number; launched: boolean; target: number; dodge: number } | null = null;
+  private robotAtk: { t: number; launched: boolean } | null = null;
   private camReveal = 0;
   private revealSide = 1;
   private laneDur: number = PLAYER.laneChangeTime;
@@ -441,39 +444,35 @@ export class Game {
 
   // Declenche un tir si la situation le permet (jamais pres d'un virage, ni
   // quand les voies voisines sont bouchees).
-  // Le Gardien charge puis lance un formulaire enflamme sur un coureur : le
-  // joueur, ou pendant un defi parfois le rival en derniere position.
+  // Aucun grand evenement en cours ni juste termine, tutoriel fini, pas de
+  // virage proche.
+  private eventFree(): boolean {
+    const seg = this.path.segs[this.segIdx];
+    return !this.raceOn && !this.robotAtk && this.projectiles.active === 0 && this.tutorialDone
+      && this.runTime > this.busyUntil && seg.s1 - this.dist > 70 && this.warn <= 0;
+  }
+
+  // Le Gardien charge puis lance un formulaire enflamme sur le joueur
+  // (uniquement hors des defis, quand rien d'autre ne se passe).
   private tryProjectile(): boolean {
+    if (!this.eventFree()) return false;
     const T = ROBOT_WIND + FLIGHT;
     const seg = this.path.segs[this.segIdx];
     if (this.turnQueued || this.dist + this.speed * T > seg.s1 - J - 14) return false;
-    let target = -1;
-    if (this.raceOn && this.raceGo && this.rivals.active) {
-      const last = this.rivals.list.reduce((m, r, k) => (r.visible && r.s < this.dist && (m < 0 || r.s < this.rivals.list[m].s) ? k : m), -1);
-      if (last >= 0 && Math.random() < 0.6) target = last;
-    }
-    let st: number, x: number;
-    if (target >= 0) {
-      const r = this.rivals.list[target];
-      st = r.s + r.speed * T;
-      x = laneX(r.lane);
-    } else {
-      st = this.dist + this.speed * T;
-      const lane = this.lane;
-      if (!this.track.laneClear(lane, st, 4)) return false;
-      const escape = [lane - 1, lane + 1].filter((l) => l >= -1 && l <= 1 && this.track.laneClear(l, st, 9));
-      if (!escape.length) return false;
-      x = laneX(lane);
-    }
-    this.projectiles.spawn(st, x, T);
-    this.robotAtk = { t: 0, launched: false, target, dodge: target >= 0 && Math.random() < 0.55 ? 0.7 + Math.random() * 0.6 : -1 };
+    const st = this.dist + this.speed * T;
+    const lane = this.lane;
+    if (!this.track.laneClear(lane, st, 4)) return false;
+    const escape = [lane - 1, lane + 1].filter((l) => l >= -1 && l <= 1 && this.track.laneClear(l, st, 9));
+    if (!escape.length) return false;
+    this.projectiles.spawn(st, laneX(lane), T);
+    this.robotAtk = { t: 0, launched: false };
     this.revealSide = this.x <= 0 ? 1 : -1;
     this.chaser.holdOrb(true);
     this.chaser.setAngry(1);
     this.audio.projCharge();
     this.audio.taunt();
-    // Carte d'explication pour les deux premiers tirs vises sur le joueur.
-    if (target < 0 && this.projSeen < 2) {
+    // Carte d'explication pour les deux premiers tirs.
+    if (this.projSeen < 2) {
       this.projSeen++;
       this.ui.threat();
     }
@@ -486,7 +485,7 @@ export class Game {
   private updateRace(dt: number) {
     if (!this.raceOn) {
       const seg = this.path.segs[this.segIdx];
-      if (this.dist >= this.nextRaceAt && seg.s1 - this.dist > 90) this.startRace();
+      if (this.dist >= this.nextRaceAt && seg.s1 - this.dist > 90 && this.eventFree()) this.startRace();
       else this.outTime = Math.max(0, this.outTime - dt * 1.5);
       return;
     }
@@ -554,10 +553,11 @@ export class Game {
 
   private endRace(rank: number) {
     this.raceOn = false;
+    this.busyUntil = this.runTime + 5;
     this.nextRaceAt = this.dist + RACE.every[0] + Math.random() * (RACE.every[1] - RACE.every[0]);
     const pts = (rank === 1 ? 500 : rank === 2 ? 200 : 0) * this.multiplier();
     this.score += pts;
-    if (rank <= 2) this.ui.callout({ title: rank === 1 ? '1ER !' : '2E !', value: `+${pts}`, ms: 1800 });
+    if (rank <= 2) this.ui.callout({ title: rank === 1 ? '1ER !' : '2E !', value: `+${pts}`, ms: 1800, prio: 2 });
     else this.ui.callout({ title: 'DERNIER', danger: true, ms: 1600 });
     this.audio.raceEnd(rank <= 2);
     if (rank === 1) this.ui.flashWhite(0.3);
@@ -575,6 +575,7 @@ export class Game {
       raceOn: this.raceOn,
       rank: this.raceOn ? this.rank : 1,
       rivals: this.rivals.active ? this.rivals.list : [],
+      allowThreat: this.raceOn && this.raceGo && this.raceT > 4 && !this.robotAtk && this.warn <= 0,
     };
   }
 
@@ -625,7 +626,7 @@ export class Game {
     window.setTimeout(() => this.chaser.setDormant(false), 1500);
     this.audio.robotBonk();
     this.shake = Math.max(this.shake, 0.2);
-    this.ui.callout({ title: 'GARDIEN SONNÉ !', ms: 1400 });
+    this.ui.callout({ title: 'GARDIEN SONNÉ !', ms: 1400, prio: 2 });
   }
 
   private useItem() {
@@ -662,18 +663,16 @@ export class Game {
     const atk = this.robotAtk;
     if (this.state === 'playing') {
       this.projTimer -= dt;
-      if (this.projTimer <= 0 && this.dist > 350 && pr.active === 0 && !atk) {
-        const d = clamp((this.dist - 350) / 3000, 0, 1);
-        this.projTimer = this.tryProjectile() ? 11 - 5 * d + Math.random() * 4 : 1.5;
+      if (this.projTimer <= 0 && this.dist > 500 && !atk) {
+        const d = clamp((this.dist - 500) / 3000, 0, 1);
+        this.projTimer = this.tryProjectile() ? 22 - 4 * d + Math.random() * 4 : 1.5;
       }
       if (atk) {
         atk.t += dt;
-        // Le rival vise tente parfois d'esquiver.
-        if (atk.dodge > 0 && atk.t >= atk.dodge) {
-          atk.dodge = -1;
-          this.rivals.list[atk.target]?.sidestep(this.track);
+        if (atk.t > ROBOT_WIND + FLIGHT + 0.6) {
+          this.robotAtk = null;
+          this.busyUntil = this.runTime + 4;
         }
-        if (atk.t > ROBOT_WIND + FLIGHT + 0.6) this.robotAtk = null;
       }
     }
     // Camera derriere le Gardien pendant la charge : on le voit armer son bras.
@@ -910,7 +909,7 @@ export class Game {
     this.chaser.play('roar');
     this.audio.roar();
     this.shake = 0.35;
-    this.ui.toast('COURS !', false, 1300);
+    this.ui.callout({ title: 'COURS !', ms: 1300, prio: 2 });
   }
 
   private restart(play: boolean) {
@@ -1191,7 +1190,8 @@ export class Game {
     if (zone !== this.zone) {
       this.zone = zone;
       this.audio.setZone(zone);
-      if (this.state === 'playing') this.ui.zone(zone);
+      // Pas de bandeau de lieu pendant un compte a rebours ou une attaque.
+      if (this.state === 'playing' && !(this.raceOn && !this.raceGo) && !this.robotAtk) this.ui.zone(zone);
     }
 
     if (this.slideTimer > 0) {

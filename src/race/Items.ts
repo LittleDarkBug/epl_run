@@ -60,6 +60,8 @@ export interface ItemContext {
   raceOn: boolean;
   rank: number;
   rivals: Rival[];
+  // Les rivaux ne peuvent viser le joueur que si rien d'autre ne se passe.
+  allowThreat: boolean;
 }
 
 function kraftTexture(): THREE.Texture {
@@ -149,6 +151,7 @@ export class Items {
   private rivalUseAt: number[] = [];
   // Tir dirige vers le joueur (indicateur a l'ecran) : decalage lateral.
   incoming: number | null = null;
+  private threatReady = 0; // au plus un tir de rival vers le joueur toutes les 7 s
 
   onPickup: ((who: number, x: number, y: number, z: number) => void) | null = null;
   onUse: ((who: number, type: ItemType) => void) | null = null;
@@ -368,13 +371,15 @@ export class Items {
     ctx.rivals.forEach((r, k) => {
       const it = this.rivalItem[k];
       if (!it || this.time < this.rivalUseAt[k] || !r.visible || r.leaving) return;
-      if (it === 'chalk') {
-        // Seulement si le joueur est devant, a portee.
+      if (it === 'chalk' || it === 'plane') {
+        // Tir possible vers le joueur : seulement si le directeur le permet,
+        // espace dans le temps, et joueur devant a portee.
         const d = P.s - r.s;
-        if (d < 4 || d > 28) {
-          this.rivalUseAt[k] = this.time + 0.8;
+        if (!ctx.allowThreat || this.time < this.threatReady || d < 4 || d > 28) {
+          this.rivalUseAt[k] = this.time + 1;
           return;
         }
+        this.threatReady = this.time + 7;
       }
       this.rivalItem[k] = null;
       r.actor.throwAnim();

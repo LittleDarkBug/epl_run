@@ -171,7 +171,17 @@ export class UI {
 
   // Message central : coup de tampon (encre bleue, rouge si danger) et sceau
   // rond pour une valeur (+250, 2/3).
-  callout(o: { title: string; value?: string; danger?: boolean; ms?: number }) {
+  // Un seul message central a la fois : un message moins prioritaire que
+  // celui affiche est ignore (danger 3 > evenement 2 > bonus 1).
+  private calloutPrio = 0;
+  private calloutUntil = 0;
+
+  callout(o: { title: string; value?: string; danger?: boolean; ms?: number; prio?: number }) {
+    const prio = o.prio ?? (o.danger ? 3 : 1);
+    const now = performance.now();
+    if (now < this.calloutUntil && prio < this.calloutPrio) return;
+    this.calloutPrio = prio;
+    this.calloutUntil = now + (o.ms ?? 1200);
     const el = $('toast');
     const [stamp, seal] = Array.from(el.children) as HTMLElement[];
     stamp.querySelector('strong')!.textContent = o.title;
@@ -206,6 +216,10 @@ export class UI {
       el.classList.remove('show', 'go');
       return;
     }
+    // Le compte a rebours occupe le centre : pas de message ordinaire par-dessus.
+    this.calloutPrio = 2;
+    this.calloutUntil = performance.now() + 1000;
+    $('toast').classList.remove('show');
     const c = $('ch-count');
     c.textContent = n === 'go' ? 'PARTEZ !' : String(n);
     c.classList.toggle('red', n === 'go');

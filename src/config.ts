@@ -55,7 +55,7 @@ export const RACE = {
   outLimit: 10, // secondes cumulees hors du top 2 avant la capture
   grace: 3, // secondes apres le depart sans penalite
   firstAt: 450, // premier defi (metres)
-  every: [700, 1000], // ecart entre deux defis (metres)
+  every: [1100, 1500], // ecart entre deux defis (metres)
   duration: 35, // duree d'un defi (secondes)
   momentumPerCoin: 0.006,
   momentumMax: 0.12,
