@@ -171,17 +171,33 @@ export class UI {
 
   // Message central : coup de tampon (encre bleue, rouge si danger) et sceau
   // rond pour une valeur (+250, 2/3).
+  // Canal central unique : virage > esquive > compte a rebours > message >
+  // lieu. Un element ne s'affiche pas si un plus important est visible.
+  private shown(id: string): boolean {
+    return $(id).classList.contains('show');
+  }
+
+  private clearCenter(...ids: string[]) {
+    for (const id of ids) {
+      const el = $(id);
+      el.classList.remove('show');
+      if (id === 'toast') el.classList.add('hide');
+    }
+  }
+
   // Un seul message central a la fois : un message moins prioritaire que
   // celui affiche est ignore (danger 3 > evenement 2 > bonus 1).
   private calloutPrio = 0;
   private calloutUntil = 0;
 
   callout(o: { title: string; value?: string; danger?: boolean; ms?: number; prio?: number }) {
+    if (this.shown('turn-hint') || this.shown('threat') || this.shown('ch-intro')) return;
     const prio = o.prio ?? (o.danger ? 3 : 1);
     const now = performance.now();
     if (now < this.calloutUntil && prio < this.calloutPrio) return;
     this.calloutPrio = prio;
     this.calloutUntil = now + (o.ms ?? 1200);
+    this.clearCenter('zone-banner');
     const el = $('toast');
     const [stamp, seal] = Array.from(el.children) as HTMLElement[];
     stamp.querySelector('strong')!.textContent = o.title;
@@ -217,9 +233,7 @@ export class UI {
       return;
     }
     // Le compte a rebours occupe le centre : pas de message ordinaire par-dessus.
-    this.calloutPrio = 2;
-    this.calloutUntil = performance.now() + 1000;
-    $('toast').classList.remove('show');
+    this.clearCenter('toast', 'zone-banner');
     const c = $('ch-count');
     c.textContent = n === 'go' ? 'PARTEZ !' : String(n);
     c.classList.toggle('red', n === 'go');
@@ -297,6 +311,8 @@ export class UI {
 
   // Carte d'alerte : le Gardien lance un formulaire rejete.
   threat(ms = 2300) {
+    if (this.shown('turn-hint')) return;
+    this.clearCenter('toast', 'zone-banner');
     const el = $('threat');
     el.classList.remove('show');
     void el.offsetWidth;
@@ -315,6 +331,7 @@ export class UI {
   }
 
   zone(z: 'street' | 'corridor' | 'court') {
+    if (this.shown('turn-hint') || this.shown('threat') || this.shown('ch-intro') || this.shown('toast')) return;
     const pickOne = (a: string[]) => a[Math.floor(Math.random() * a.length)];
     const info = {
       street: ['Quartier', pickOne(['RUES DE LOMÉ', 'BOULEVARD DU 13 JANVIER', 'VERS LE GRAND MARCHÉ'])],
@@ -344,6 +361,8 @@ export class UI {
       el.classList.remove('show');
       return;
     }
+    this.clearCenter('toast', 'zone-banner', 'threat');
+    this.tuto.classList.remove('show');
     el.classList.toggle('left', dir < 0);
     $('turn-text').textContent = 'TOURNE';
     el.classList.add('show');

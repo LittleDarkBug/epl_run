@@ -156,6 +156,8 @@ export class Game {
   // Directeur : un seul grand evenement a la fois (defi, attaque du Gardien),
   // avec un temps de respiration entre deux.
   private busyUntil = 0;
+  private zonePending: Zone | null = null;
+  private zoneAt = 0;
   private raceOn = false; // defi en cours
   private raceGo = false; // apres le compte a rebours
   private raceCount = 0;
@@ -446,10 +448,19 @@ export class Game {
   // quand les voies voisines sont bouchees).
   // Aucun grand evenement en cours ni juste termine, tutoriel fini, pas de
   // virage proche.
+  // Moment calme : aucun virage proche ni juste passe, pas de tutoriel, de
+  // compte a rebours ni d'attaque. Les messages secondaires n'apparaissent
+  // que dans ces moments-la ; sinon ils ne sont pas affiches du tout.
+  private calm(): boolean {
+    const seg = this.path.segs[this.segIdx];
+    return this.state === 'playing' && this.tutorialDone && !this.robotAtk && (!this.raceOn || this.raceGo)
+      && seg.s1 - this.dist > 50 && this.dist - seg.s0 > 12 && this.turnQueued === 0;
+  }
+
   private eventFree(): boolean {
     const seg = this.path.segs[this.segIdx];
     return !this.raceOn && !this.robotAtk && this.projectiles.active === 0 && this.tutorialDone
-      && this.runTime > this.busyUntil && seg.s1 - this.dist > 70 && this.warn <= 0;
+      && this.runTime > this.busyUntil && !this.zonePending && seg.s1 - this.dist > 70 && this.warn <= 0;
   }
 
   // Le Gardien charge puis lance un formulaire enflamme sur le joueur
@@ -590,7 +601,7 @@ export class Game {
       this.audio.itemThrow(type);
       if (who === -1 && type === 'turbo') {
         this.turboT = 2.6;
-        this.ui.callout({ title: 'TURBO !' });
+        if (this.calm()) this.ui.callout({ title: 'TURBO !' });
       }
     };
     it.onTrail = (p, type) => {
@@ -603,14 +614,14 @@ export class Game {
       this.audio.itemHit();
       this.particles.sparkle(p.x, p.y, p.z, type === 'chalk' ? [1, 1, 1] : [0.9, 0.95, 1], 26);
       this.particles.impact(p.x, p.y - 1, p.z, 10);
-      if (owner === -1) this.ui.callout({ title: 'TOUCHÉ !', ms: 900 });
+      if (owner === -1 && this.calm()) this.ui.callout({ title: 'TOUCHÉ !', ms: 900 });
     };
     it.onHitPlayer = () => {
       if (this.useShield()) return;
       this.player.spin();
       this.audio.itemHit();
       this.particles.sparkle(this.pw.x, this.y + 1.2, this.pw.z, [1, 1, 1], 26);
-      this.ui.callout({ title: 'AÏE !', danger: true, ms: 900 });
+      if (this.calm()) this.ui.callout({ title: 'AÏE !', danger: true, ms: 900 });
       this.onStumble(this.x, true);
     };
     it.onHitRobot = () => this.stunRobot();
@@ -712,7 +723,6 @@ export class Game {
         this.diplomas++;
         this.audio.powerUp();
         this.particles.sparkle(x, y, z, [1, 0.8, 0.3], 40);
-        this.ui.callout({ title: 'DIPLÔME', value: `+${pts}` });
         this.ui.flashWhite(0.3);
         return;
       }
@@ -724,7 +734,7 @@ export class Game {
       this.audio.powerUp();
       const colors: Record<PowerUpType, number[]> = { magnet: [1, 0.2, 0.35], sneakers: [0.1, 0.9, 0.8], double: [0.7, 0.4, 1] };
       this.particles.sparkle(x, y, z, colors[t], 30);
-      this.ui.callout({ title: { magnet: 'AIMANT', sneakers: 'SUPER BASKETS', double: 'POINTS x2' }[t] });
+      if (this.calm()) this.ui.callout({ title: { magnet: 'AIMANT', sneakers: 'SUPER BASKETS', double: 'POINTS x2' }[t] });
       this.ui.flashWhite(0.25);
       if (t === 'sneakers') this.player.setSuperSneakers(true);
     };
@@ -753,8 +763,8 @@ export class Game {
       this.score += pts;
       this.audio.shieldUp();
       this.ui.flashWhite(0.45);
-      this.ui.callout({ title: 'DOSSIER COMPLET', value: `+${pts}`, ms: 1600 });
-    } else {
+      if (this.calm()) this.ui.callout({ title: 'DOSSIER COMPLET', value: `+${pts}`, ms: 1600 });
+    } else if (this.calm()) {
       this.ui.callout({ title: names[p], value: `${this.dossier.size}/3` });
     }
     this.refreshDossier();
@@ -832,6 +842,7 @@ export class Game {
     this.skipCaught = false;
     this.path.posOn(this.path.segs[this.segIdx], this.dist, 0, this.pw);
     this.tutorialStep = 0;
+    this.zonePending = null;
     this.world.reset(this.dist);
     this.track.reset(this.dist);
     this.player.play('idle');
@@ -1190,8 +1201,19 @@ export class Game {
     if (zone !== this.zone) {
       this.zone = zone;
       this.audio.setZone(zone);
-      // Pas de bandeau de lieu pendant un compte a rebours ou une attaque.
-      if (this.state === 'playing' && !(this.raceOn && !this.raceGo) && !this.robotAtk) this.ui.zone(zone);
+      // Les zones changent au virage : le bandeau attend la sortie du
+      // carrefour et un moment calme, sinon il est abandonne.
+      this.zonePending = this.state === 'playing' && !this.raceOn ? zone : null;
+      this.zoneAt = this.runTime;
+    }
+    if (this.zonePending && this.runTime - this.zoneAt > 0.8) {
+      if (this.runTime - this.zoneAt > 5 || this.raceOn) this.zonePending = null;
+      else if (this.calm()) {
+        this.ui.zone(this.zonePending);
+        this.zonePending = null;
+        // Aucun defi ni attaque tant que le bandeau est affiche.
+        this.busyUntil = Math.max(this.busyUntil, this.runTime + 2.6);
+      }
     }
 
     if (this.slideTimer > 0) {
@@ -1300,6 +1322,8 @@ export class Game {
     this.turnQueued = 0;
     this.cornerAnnounced = -1;
     this.ui.turnHint(0);
+    // Le tutoriel, masque pendant le virage, reprend a l'etape en cours.
+    if (this.tutorialStep > 0 && this.tutorialStep < 4) this.ui.tutorial((['lanes', 'jump', 'slide'] as const)[this.tutorialStep - 1]);
     this.audio.turn(Math.sign(seg.turn));
     this.shake = Math.max(this.shake, 0.05);
   }
